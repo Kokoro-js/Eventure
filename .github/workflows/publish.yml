@@ -4,8 +4,12 @@ on:
   release:
     types: [published]
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
-  lint:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
