@@ -42,4 +42,8 @@ export interface EventEmitterOptions<E extends IEventMap = IEventMap> {
 	logger?: Logger
 	/** 如果提供，就会在构造时预先 `this._listeners[event] = []` */
 	events?: Array<keyof E>
+	// 默认开启，用以决定库是否帮你 catch 可能的异步错误，对异步监听器性能有影响，极端情况(1e6 RUNS往上)下 -40% 性能，但推荐开启，因为大部分时候安全比性能更重要
+	catchPromiseError?: boolean
+	// 默认关闭，用以决定库是否帮你处理一些行为怪异的监听器，比如在同步函数返回 Promise 的行为等，开启会大幅度降低高频下同步函数的性能。
+	checkSyncFuncReturnPromise?: boolean
 }

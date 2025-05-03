@@ -24,6 +24,8 @@ export class Eventure<E extends IEventMap> {
 		this._maxListeners = count
 	}
 	protected _logger: Logger
+	protected _catchPromiseError: boolean
+	protected _checkSyncFuncReturnPromise: boolean
 
 	constructor(options?: EventEmitterOptions<E>) {
 		this._logger = options?.logger ?? defaultLogger
@@ -32,33 +34,45 @@ export class Eventure<E extends IEventMap> {
 				this._listeners[ev] = []
 			}
 		}
+		this._catchPromiseError = options?.catchPromiseError ?? true
+		this._checkSyncFuncReturnPromise =
+			options?.checkSyncFuncReturnPromise ?? false
 	}
 
 	public wrapHelper(
 		// biome-ignore lint/complexity/noBannedTypes: <explanation>
 		listener: Function,
 	): EventListener<any> {
-		// 此处防不了同步函数返回 Promise，
-		// 但这是事件库，往监听器里这样写是匪夷所思的，所以不做预防
-		// 此处给 async 补 catch 纯粹是担心用户在处理异步时忘记处理所有错误导致 uncatch error
-		if (listener.constructor.name !== 'AsyncFunction') {
+		const isNativeAsync = listener.constructor.name === 'AsyncFunction'
+		// 是否需要包裹：必须开启 catchPromiseError，且 (函数原生 async 或者 开启了 checkSyncFuncReturnPromise)
+		const shouldWrap =
+			this._catchPromiseError &&
+			(isNativeAsync || this._checkSyncFuncReturnPromise)
+		if (!shouldWrap) {
 			return listener as EventListener<any>
 		}
-		const wrapped = (...args: any[]) =>
-			(listener as any)(...args).catch((e: any) => {
-				this._logger.error(e)
-				return e
-			})
+
+		const wrapped: EventListener<any> = (...args) => {
+			const result = listener(...args)
+			if (result && typeof (result as Promise<any>).then === 'function') {
+				return (result as Promise<any>).catch((err: any) => {
+					this._logger.error(err)
+					return err
+				})
+			}
+			return result
+		}
 
 		Object.defineProperty(wrapped, ORIGFUNC, {
 			value: listener,
 			writable: false,
 		})
 		Object.defineProperty(wrapped, IS_ASYNC, {
-			value: true,
+			value: isNativeAsync,
 			writable: false,
 		})
-		return wrapped as EventListener<any>
+
+		return wrapped
 	}
 
 	protected _add<K extends keyof E>(
@@ -66,17 +80,16 @@ export class Eventure<E extends IEventMap> {
 		listener: EventListener<E[K]>,
 		prepend: boolean,
 	): void {
-		let list = this._listeners[event]
-		if (!list) {
-			list = []
-			this._listeners[event] = list
-		}
-
 		const fn = this.wrapHelper(listener)
-		prepend ? list.unshift(fn) : list.push(fn)
+		const prev = this._listeners[event] ?? []
 
-		if (list.length > this._maxListeners) {
-			const msg = `MaxListenersExceededWarning: '${String(event)}' 已有 ${list.length} 个监听器，超过最大 ${this._maxListeners}`
+		// 复制一份新数组并替换
+		const next = prepend ? [fn, ...prev] : [...prev, fn]
+
+		this._listeners[event] = next
+
+		if (next.length > this._maxListeners) {
+			const msg = `MaxListenersExceededWarning: '${String(event)}' 已有 ${next.length} 个监听器，超过最大 ${this._maxListeners}`
 			this._logger.warn(msg) ?? console.warn(msg)
 		}
 	}
@@ -86,16 +99,15 @@ export class Eventure<E extends IEventMap> {
 
 	// —— off / removeListener ——
 	public off<K extends keyof E>(event: K, listener: EventListener<E[K]>): this {
-		const arr = this._listeners[event]
-		if (!arr) return this
-		for (let i = 0; i < arr.length; i++) {
-			const fn = arr[i] as any
-			// 找到原始 listener 或 wrapper 本身
-			if (fn === listener || fn[ORIGFUNC] === listener) {
-				arr.splice(i, 1)
-				break
-			}
-		}
+		const prev = this._listeners[event]
+		if (!prev) return this
+
+		// 复制一份新数组，滤除掉被移除的 listener
+		const next = prev.filter(
+			(fn) => fn !== listener && (fn as any)[ORIGFUNC] !== listener,
+		)
+
+		this._listeners[event] = next
 		return this
 	}
 
@@ -156,7 +168,7 @@ export class Eventure<E extends IEventMap> {
 		},
 	): R[] {
 		// 必须返回拷贝才能保证功能正确，否则 once 这些在你没执行完就已经编辑原 arr 了(比如删除)会导致触发器混乱
-		const list = this._listeners[event]?.slice() ?? []
+		const list = this._listeners[event] ?? []
 		const filtered = options?.filter ? list.filter(options.filter) : list
 		return options?.map
 			? filtered.map(options.map)

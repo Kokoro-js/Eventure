@@ -90,6 +90,7 @@ function many<E extends IEventMap, K extends keyof E>(
 	listener: EventListener<E[K]>,
 	options?: OnceManyOptions<E, K>,
 ): Eventure<E> | Unsubscribe {
+	if (times < 1) throw new Error('times must bigger than 0')
 	const { manual } = options || {}
 	const unsub = limited.call(this, event, listener, times, options)
 	return manual ? unsub : this
@@ -107,6 +108,7 @@ function prependMany<E extends IEventMap, K extends keyof E>(
 	listener: EventListener<E[K]>,
 	options?: OnceManyOptions<E, K>,
 ): Eventure<E> | Unsubscribe {
+	if (times < 1) throw new Error('times must bigger than 0')
 	const { manual } = options || {}
 	const unsub = limited.call(this, event, listener, times, {
 		...options,

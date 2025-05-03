@@ -1,16 +1,20 @@
 // tests/when.test.ts
-import { describe, it, expect } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import { Eventure } from '@/index'
-import type { IEventMap, EventListener } from '@/types'
+import type { EventListener, IEventMap } from '@/types'
 
-interface MyEvents extends IEventMap {
+interface Events extends IEventMap {
 	num: [number]
 	str: [string]
 }
 
 describe('Eventified.when', () => {
+	let emitter: Eventure<Events>
+	beforeEach(() => {
+		emitter = new Eventure()
+	})
+
 	it('when(...).once: only fires when predicate is true, and unsubscribes after first match', () => {
-		const emitter = new Eventure<MyEvents>()
 		const calls: number[] = []
 
 		// 只在数字为偶数时触发一次
@@ -28,7 +32,6 @@ describe('Eventified.when', () => {
 	})
 
 	it('when(...).prependOnce: respects prepend order and predicate', () => {
-		const emitter = new Eventure<MyEvents>()
 		const calls: string[] = []
 
 		emitter.on('str', (s) => calls.push(`on:${s}`))
@@ -51,7 +54,6 @@ describe('Eventified.when', () => {
 	})
 
 	it('when(...).many: 触发多次后自动退订，仅计数 predicate 为 true 的情况', () => {
-		const emitter = new Eventure<MyEvents>()
 		const calls: number[] = []
 
 		// 只在正数时，连续触发三次后退订
@@ -72,7 +74,6 @@ describe('Eventified.when', () => {
 	})
 
 	it('when(...).prependMany: respects prepend order and次数限制', () => {
-		const emitter = new Eventure<MyEvents>()
 		const calls: string[] = []
 
 		emitter.on('str', (s) => calls.push(`on:${s}`))
@@ -94,7 +95,6 @@ describe('Eventified.when', () => {
 	})
 
 	it('when without predicate behaves like many with always-true predicate', () => {
-		const emitter = new Eventure<MyEvents>()
 		const calls: number[] = []
 
 		// 等同于 .when("num", () => true).once(...)
@@ -106,13 +106,14 @@ describe('Eventified.when', () => {
 	})
 
 	it('multiple when() chains are independent', () => {
-		const emitter = new Eventure<MyEvents>()
 		const evens: number[] = []
 		const odds: number[] = []
 
 		emitter.when('num', (n) => n % 2 === 0).many(2, (n) => evens.push(n))
 
-		emitter.when('num', (n) => n % 2 === 1).once((n) => odds.push(n))
+		emitter
+			.when('num', (n) => n % 2 === 1)
+			.once((n) => odds.push(n))
 
 		// mixed sequence
 		;[1, 2, 3, 4, 5].forEach((n) => emitter.emit('num', n))

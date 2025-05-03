@@ -1,5 +1,5 @@
 // tests/fire.test.ts
-import { describe, it, expect } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import { Eventure, IS_ASYNC, ORIGFUNC } from '@/index'
 import type { IEventMap } from '@/types'
 
@@ -8,8 +8,12 @@ interface Events extends IEventMap {
 }
 
 describe('Eventified.fire (同步 generator)', () => {
+	let emitter: Eventure<Events>
+	beforeEach(() => {
+		emitter = new Eventure()
+	})
+
 	it('应当依次对同步 listener 产出 success 或 error', () => {
-		const emitter = new Eventure<Events>()
 		const okFn = (s: string) => s + '!'
 		const errFn = (s: string) => {
 			throw new Error('fail')
@@ -41,7 +45,6 @@ describe('Eventified.fire (同步 generator)', () => {
 	})
 
 	it("对 async listener 会产出 type='async' 且带上 promise", async () => {
-		const emitter = new Eventure<Events>()
 		const asyncFn = async (s: string) => s.toUpperCase()
 		emitter.on('ev', asyncFn)
 
@@ -56,7 +59,6 @@ describe('Eventified.fire (同步 generator)', () => {
 	})
 
 	it('async listener 内抛错会被 catch 并以 resolve(Error) 形式返回', async () => {
-		const emitter = new Eventure<Events>()
 		const boomFn = async (s: string) => {
 			throw new Error('boom')
 		}
@@ -73,8 +75,12 @@ describe('Eventified.fire (同步 generator)', () => {
 })
 
 describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
+	let emitter: Eventure<Events>
+	beforeEach(() => {
+		emitter = new Eventure()
+	})
+
 	it('应当依次对所有 listener await 并产出 success 或 error', async () => {
-		const emitter = new Eventure<Events>()
 		const syncFn = (s: string) => s + '?'
 		const throwFn = (s: string) => {
 			throw new Error('oops')
@@ -120,7 +126,6 @@ describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
 	})
 
 	it('可在外部通过 break/return 提前终止，不再调用后续 listener', async () => {
-		const emitter = new Eventure<Events>()
 		let count = 0
 		emitter.on('ev', () => {
 			count++

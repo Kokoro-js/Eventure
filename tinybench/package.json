@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "eventemitter3": "^5.0.1",
+    "mitt": "^3.0.1",
+    "tinybench": "^4.0.1"
+  },
+  "scripts": {
+    "bench": "bun ./emit"
+  }
+}
