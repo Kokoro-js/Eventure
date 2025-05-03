@@ -1,47 +1,41 @@
 {
-  "name": "eventure",
-  "version": "0.1.0",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.cts",
-  "exports": {
-    "require": {
-      "types": "./dist/index.d.cts",
-      "default": "./dist/index.cjs"
-    },
-    "import": {
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
-    }
-  },
-  "files": [
-    "dist/"
-  ],
-  "keywords": [
-    "event",
-    "hook",
-    "emit"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Kokoro-js/eventure.git"
-  },
-  "license": "Apache-2.0",
-  "scripts": {
-    "dev": "bun run --hot .src\\index.ts",
-    "test": "bun test",
-    "build": "pkgroll",
-    "prepublish": "pkgroll",
-    "lint": "biome lint",
-    "format:check": "biome format",
-    "format": "biome format --write",
-    "type-check": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@types/bun": "^1.2.10",
-    "pkgroll": "^2.12.2",
-    "type-fest": "^4.40.1",
-    "typescript": "^5.8.3"
-  }
+	"name": "eventure",
+	"version": "0.1.0",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		"require": {
+			"types": "./dist/index.d.cts",
+			"default": "./dist/index.cjs"
+		},
+		"import": {
+			"types": "./dist/index.d.mts",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"files": ["dist/"],
+	"keywords": ["event", "hook", "emit"],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Kokoro-js/eventure.git"
+	},
+	"license": "Apache-2.0",
+	"scripts": {
+		"dev": "bun run --hot .src\\index.ts",
+		"test": "bun test",
+		"build": "pkgroll",
+		"prepublish": "pkgroll --minify",
+		"lint": "biome lint",
+		"format:check": "biome format",
+		"format": "biome format --write",
+		"type-check": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.4",
+		"@types/bun": "^1.2.10",
+		"pkgroll": "^2.12.2",
+		"type-fest": "^4.40.1",
+		"typescript": "^5.8.3"
+	}
 }
