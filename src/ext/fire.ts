@@ -1,3 +1,4 @@
+import { IS_ASYNC } from '@/symbol'
 import type {
 	Awaitable,
 	EventArgs,
@@ -5,7 +6,7 @@ import type {
 	EventResult,
 	IEventMap,
 } from '@/types'
-import { type Eventure, IS_ASYNC } from '..'
+import type { Eventure } from '..'
 
 // 同步生成器结果：
 export type FireSyncResult<E extends IEventMap, K extends keyof E> =

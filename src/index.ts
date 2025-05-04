@@ -1,4 +1,5 @@
 import { type Logger, defaultLogger } from './logger'
+import { IS_ASYNC, ORIGFUNC } from './symbol'
 // eventified.ts
 import type {
 	EventArgs,
@@ -9,12 +10,12 @@ import type {
 	Unsubscribe,
 } from './types'
 export * from './types'
+export * from './symbol'
 
-export const IS_ASYNC = Symbol('is_async')
-export const ORIGFUNC = Symbol('orig')
 export class Eventure<E extends IEventMap> {
 	// ✓ 针对每个 K 保持正确的 listener 类型
-	protected _listeners: { [K in keyof E]?: EventListener<E[K]>[] } = {}
+	protected _listeners: { [K in keyof E]?: EventListener<E[K]>[] } =
+		Object.create(null)
 	protected _activeEvents = new Set<keyof E>()
 	protected _maxListeners = 100
 	get maxListeners() {
@@ -177,11 +178,52 @@ export class Eventure<E extends IEventMap> {
 	}
 
 	public emit<K extends keyof E>(event: K, ...args: EventArgs<E[K]>): this {
-		for (const fn of this.queryListeners(event)) {
-			try {
-				fn(...args)
-			} catch {}
+		const fns: any[] = this.queryListeners(event)
+		if (fns.length === 0) return this
+		switch (args.length) {
+			case 0:
+				for (const fn of fns) {
+					try {
+						fn()
+					} catch {}
+				}
+				break
+			case 1:
+				for (const fn of fns) {
+					try {
+						fn(args[0])
+					} catch {}
+				}
+				break
+			case 2:
+				for (const fn of fns) {
+					try {
+						fn(args[0], args[1])
+					} catch {}
+				}
+				break
+			case 3:
+				for (const fn of fns) {
+					try {
+						fn(args[0], args[1], args[2])
+					} catch {}
+				}
+				break
+			case 4:
+				for (const fn of fns) {
+					try {
+						fn(args[0], args[1], args[2], args[3])
+					} catch {}
+				}
+				break
+			default:
+				for (const fn of fns) {
+					try {
+						fn(...args)
+					} catch {}
+				}
 		}
+
 		return this
 	}
 

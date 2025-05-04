@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@types/bun": "^1.2.10",
+    "@types/bun": "^1.2.11",
     "pkgroll": "^2.12.2",
     "type-fest": "^4.40.1",
     "typescript": "^5.8.3"

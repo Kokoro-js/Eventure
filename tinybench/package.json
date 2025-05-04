@@ -5,6 +5,7 @@
     "tinybench": "^4.0.1"
   },
   "scripts": {
-    "bench": "bun ./emit"
+    "bench": "bun ./emitWithOn",
+    "benchEmit": "bun ./onlyEmit"
   }
 }
