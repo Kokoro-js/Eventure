@@ -1,11 +1,11 @@
 {
   "dependencies": {
+    "eventemitter2": "^6.4.9",
     "eventemitter3": "^5.0.1",
     "mitt": "^3.0.1",
     "tinybench": "^4.0.1"
   },
   "scripts": {
-    "bench": "bun ./emitWithOn",
-    "benchEmit": "bun ./onlyEmit"
+    "bench": "bun ./onlyEmit"
   }
 }

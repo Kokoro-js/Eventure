@@ -1,6 +1,8 @@
+import EventEmitter2 from 'eventemitter2'
 import EventEmitter3 from 'eventemitter3'
 import mitt from 'mitt'
 import { Bench, hrtimeNow } from 'tinybench'
+// 记得 build 了再来测试噢
 import { Eventure as MyEmitter } from '../dist/index.mjs'
 import pkg from './package.json' assert { type: 'json' }
 
@@ -9,155 +11,112 @@ const EVENT = 'ping'
 const PAYLOAD = { msg: 'hello' }
 const RUNS = 1e5
 
-async function main() {
-	//
-	// —— Pure Sync Benchmark ——
-	//
+// 统一定义三种实现的配置，后续循环注册
+const title = `${NAME} vs eventemitter3(${pkg.dependencies.eventemitter3}) vs eventemitter2(${pkg.dependencies.eventemitter2}) vs mitt(${pkg.dependencies.mitt})`
+const implementations = [
+	{
+		label: `${NAME} — pure sync`,
+		// 我们的库默认帮助用户 catchPromiseError，但其他库不会，关闭以平衡这部分开销
+		create: () => new MyEmitter({ catchPromiseError: false }),
+	},
+	{
+		label: `EventEmitter3 — pure sync`,
+		create: () => new EventEmitter3(),
+	},
+	{
+		label: `EventEmitter2 — pure sync`,
+		create: () => new EventEmitter2(),
+	},
+	{
+		label: `mitt — pure sync`,
+		create: () => mitt<any>(),
+	},
+]
 
-	// Prepare emitters and listeners once, outside measurement
-	const emitterEventure = new MyEmitter()
-	let cntEventure = 0
-	emitterEventure.on(EVENT, (data) => {
-		cntEventure += data.msg.length
-	})
-	emitterEventure.on(EVENT, (data) => {
-		cntEventure += data.msg.length
-	})
-
-	const emitterEE3 = new EventEmitter3()
-	let cntEE3 = 0
-	emitterEE3.on(EVENT, (data) => {
-		cntEE3 += data.msg.length
-	})
-	emitterEE3.on(EVENT, (data) => {
-		cntEE3 += data.msg.length
-	})
-
-	const emitterMitt = mitt<any>()
-	let cntMitt = 0
-	emitterMitt.on(EVENT, (data) => {
-		cntMitt += data.msg.length
-	})
-	emitterMitt.on(EVENT, (data) => {
-		cntMitt += data.msg.length
-	})
-
-	// Create a Bench for sync, using high-precision clock
-	const benchSync = new Bench({
-		name: `${NAME} vs eventemitter3 vs mitt — sync`,
-		time: 200,
-		iterations: 10,
-		now: hrtimeNow,
-	})
-
-	benchSync
-		.add(`${NAME} — pure sync`, () => {
-			cntEventure = 0
-			for (let i = 0; i < RUNS; i++) {
-				emitterEventure.emit(EVENT, PAYLOAD)
-			}
-		})
-		.add(
-			`EventEmitter3 (${pkg.dependencies.eventemitter3}) — pure sync`,
-			() => {
-				cntEE3 = 0
-				for (let i = 0; i < RUNS; i++) {
-					emitterEE3.emit(EVENT, PAYLOAD)
-				}
-			},
-		)
-		.add(`mitt (${pkg.dependencies.mitt}) — pure sync`, () => {
-			cntMitt = 0
-			for (let i = 0; i < RUNS; i++) {
-				emitterMitt.emit(EVENT, PAYLOAD)
-			}
-		})
-
-	await benchSync.run()
-	console.log(`=== ${benchSync.name} ===`)
-	console.table(benchSync.table())
-
-	//
-	// —— End-to-End Async Benchmark ——
-	//
-
-	// Prepare emitters and collect listener Promises
-	const emitterEventureAsync = new MyEmitter({ catchPromiseError: false })
-	let cntEventureAsync = 0
-	let promisesEventure: any[] = []
-	emitterEventureAsync.on(EVENT, (data) => {
-		const p = Promise.resolve().then(() => {
-			cntEventureAsync += data.msg.length
-		})
-		promisesEventure.push(p)
-		return p
-	})
-
-	const emitterEE3Async = new EventEmitter3()
-	let cntEE3Async = 0
-	let promisesEE3: any[] = []
-	emitterEE3Async.on(EVENT, (data) => {
-		const p = Promise.resolve().then(() => {
-			cntEE3Async += data.msg.length
-		})
-		promisesEE3.push(p)
-		return p
-	})
-
-	const emitterMittAsync = mitt<any>()
-	let cntMittAsync = 0
-	let promisesMitt: any[] = []
-	emitterMittAsync.on(EVENT, (data) => {
-		const p = Promise.resolve().then(() => {
-			cntMittAsync += data.msg.length
-		})
-		promisesMitt.push(p)
-		return p
-	})
-
-	// Create a Bench for async
-	const benchAsync = new Bench({
-		name: `${NAME} vs eventemitter3 vs mitt — async`,
-		time: 200,
-		iterations: 10,
-		now: hrtimeNow,
-	})
-
-	benchAsync
-		.add(`${NAME} — async end-to-end`, async () => {
-			cntEventureAsync = 0
-			promisesEventure = []
-			for (let i = 0; i < RUNS; i++) {
-				emitterEventureAsync.emit(EVENT, PAYLOAD)
-			}
-			await Promise.all(promisesEventure)
-		})
-		.add(
-			`EventEmitter3 (${pkg.dependencies.eventemitter3}) — async end-to-end`,
-			async () => {
-				cntEE3Async = 0
-				promisesEE3 = []
-				for (let i = 0; i < RUNS; i++) {
-					emitterEE3Async.emit(EVENT, PAYLOAD)
-				}
-				await Promise.all(promisesEE3)
-			},
-		)
-		.add(`mitt (${pkg.dependencies.mitt}) — async end-to-end`, async () => {
-			cntMittAsync = 0
-			promisesMitt = []
-			for (let i = 0; i < RUNS; i++) {
-				emitterMittAsync.emit(EVENT, PAYLOAD)
-			}
-			await Promise.all(promisesMitt)
-		})
-
-	await benchAsync.run()
-	console.log(`=== ${benchAsync.name} ===`)
-	console.table(benchAsync.table())
-}
-
-main().catch((err) => {
-	console.error(err)
-	process.exit(1)
+// —— Pure Sync Benchmark ——
+const benchSync = new Bench({
+	name: `${title} — sync`,
+	time: 200,
+	iterations: 10,
+	now: hrtimeNow,
 })
+
+implementations.forEach(({ label, create }) => {
+	let emitter: any
+	let cnt = 0
+
+	benchSync.add(
+		label,
+		() => {
+			// 核心：只负责 emit 循环
+			for (let i = 0; i < RUNS; i++) {
+				emitter.emit(EVENT, PAYLOAD)
+			}
+		},
+		{
+			// 在该任务所有迭代前只执行一次：创建 emitter 并注册两个 listener(有些库对单体存对象来换取 bench 优势)
+			beforeAll() {
+				emitter = create()
+				emitter.on(EVENT, (data: any) => {
+					cnt += data.msg.length
+				})
+				emitter.on(EVENT, (data: any) => {
+					cnt += data.msg.length
+				})
+			},
+			// 在每次迭代前清零计数器
+			beforeEach() {
+				cnt = 0
+			},
+		},
+	)
+})
+
+await benchSync.run()
+console.log(`=== ${benchSync.name} ===`)
+console.table(benchSync.table())
+
+// —— End-to-End Async Benchmark ——
+const benchAsync = new Bench({
+	name: `${title} — async`,
+	time: 200,
+	iterations: 10,
+	now: hrtimeNow,
+})
+
+implementations.forEach(({ label, create }) => {
+	let emitter: any
+	let cnt = 0
+	let promises: Promise<any>[] = []
+
+	benchAsync.add(
+		label.replace('pure sync', 'async end-to-end'),
+		async () => {
+			for (let i = 0; i < RUNS; i++) {
+				emitter.emit(EVENT, PAYLOAD)
+			}
+			await Promise.all(promises)
+		},
+		{
+			beforeAll() {
+				emitter = create()
+				// 每次 emit 都往 promises 收集返回的 Promise
+				emitter.on(EVENT, (data: any) => {
+					const p = Promise.resolve().then(() => {
+						cnt += data.msg.length
+					})
+					promises.push(p)
+					return p
+				})
+			},
+			beforeEach() {
+				cnt = 0
+				promises = []
+			},
+		},
+	)
+})
+
+await benchAsync.run()
+console.log(`=== ${benchAsync.name} ===`)
+console.table(benchAsync.table())
