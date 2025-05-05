@@ -50,9 +50,9 @@ Eventure vs [EventEmitter3](https://github.com/primus/eventemitter3) vs [EventEm
 ### 🧪 示例用法
 
 ```ts
-import { Eventure, type IEventMap } from "eventure"
+import { Eventure } from "eventure"
 
-interface MyEvents extends IEventMap {
+interface MyEvents {
   foo: [string];                         // 等价于 (arg1: string) => void
   bar: [number, number];                // (arg1: number, arg2: number) => void
   test: (a: number, b: number) => number

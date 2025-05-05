@@ -16,9 +16,9 @@ export type SplitWaterfall<D extends EventDescriptor> = D extends (
 		: never
 	: never
 
-export type WFKeys<EM extends IEventMap> = {
-	[K in keyof EM]: SplitWaterfall<EM[K]> extends never ? never : K
-}[keyof EM]
+export type WFKeys<E extends IEventMap<E>> = {
+	[K in keyof E]: SplitWaterfall<E[K]> extends never ? never : K
+}[keyof E]
 
 /** 工具：把 [...P, N] 拆成 [P, N] */
 function splitArgsAndNext<D extends EventDescriptor>(
@@ -31,21 +31,21 @@ function splitArgsAndNext<D extends EventDescriptor>(
 }
 
 // a) 严格模式：完整传入 [...P, next]
-export function waterfall<EM extends IEventMap, K extends WFKeys<EM>>(
-	this: Eventure<EM>,
+export function waterfall<E extends IEventMap<E>, K extends WFKeys<E>>(
+	this: Eventure<E>,
 	event: K,
 	...argsAndNext: [
-		...SplitWaterfall<EM[K]>['args'],
-		SplitWaterfall<EM[K]>['next'],
+		...SplitWaterfall<E[K]>['args'],
+		SplitWaterfall<E[K]>['next'],
 	]
-): SplitWaterfall<EM[K]>['ret']
+): SplitWaterfall<E[K]>['ret']
 
 // b) 简易模式：只传 [...P]，自动用一个 no-op 做 inner callback
-export function waterfall<EM extends IEventMap, K extends WFKeys<EM>>(
-	this: Eventure<EM>,
+export function waterfall<E extends IEventMap<E>, K extends WFKeys<E>>(
+	this: Eventure<E>,
 	event: K,
-	...args: SplitWaterfall<EM[K]>['args']
-): SplitWaterfall<EM[K]>['ret']
+	...args: SplitWaterfall<E[K]>['args']
+): SplitWaterfall<E[K]>['ret']
 
 // —— 3. 真正的实现（放最后） ——
 export function waterfall(

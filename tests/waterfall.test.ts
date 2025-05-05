@@ -1,12 +1,11 @@
 // tests/waterfall.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { Eventure } from '@/index'
-import type { IEventMap } from '@/types'
 
 /**
  * 数字流水线 (number pipeline) 事件定义
  */
-interface NumberPipelineEvents extends IEventMap {
+interface NumberPipelineEvents {
 	// 接收一个数字 value，和 next 回调，返回最终数字
 	numEvent: (value: number, next: (value: number) => number) => number
 }
@@ -14,7 +13,7 @@ interface NumberPipelineEvents extends IEventMap {
 /**
  * 空返回流水线 (void pipeline) 事件定义
  */
-interface VoidPipelineEvents extends IEventMap {
+interface VoidPipelineEvents {
 	// 接收一个字符串 text，和 next 回调，无返回值
 	voidEvent: (text: string, next: (text: string) => void) => void
 }

@@ -1,9 +1,8 @@
 // tests/waitFor.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { Eventure } from '@/index'
-import type { IEventMap } from '@/types'
 
-interface Events extends IEventMap {
+interface Events {
 	ready: []
 	data: [number]
 }

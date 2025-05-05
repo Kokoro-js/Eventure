@@ -1,2 +1,4 @@
-export const IS_ASYNC = Symbol('is_async')
-export const ORIGFUNC = Symbol('orig')
+const IS_ASYNC = Symbol('is_async')
+const ORIGFUNC = Symbol('orig')
+
+export { IS_ASYNC, ORIGFUNC }

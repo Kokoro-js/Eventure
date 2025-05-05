@@ -8,13 +8,13 @@ interface CancellablePromise<T> extends Promise<T> {
 	cancel: () => void
 }
 
-interface WaitForOptions<E extends IEventMap, K extends keyof E> {
+interface WaitForOptions<E extends IEventMap<E>, K extends keyof E> {
 	timeout: number
 	filter?: (...args: EventArgs<E[K]>) => boolean
 	prepend?: boolean
 }
 
-function waitFor<E extends IEventMap, K extends keyof E>(
+function waitFor<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	{ timeout, filter = () => true, prepend = false }: WaitForOptions<E, K>,

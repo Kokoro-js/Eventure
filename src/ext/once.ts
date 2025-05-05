@@ -8,7 +8,7 @@ type BooleanAble = boolean | undefined | void
  * 通用触发次数限制函数：在满足 predicate 时计数，达到次数后自动取消监听
  * 支持 options.prepend 决定使用 prependListener 还是 on
  */
-function limited<E extends IEventMap, K extends keyof E>(
+function limited<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	listener: EventListener<E[K]>,
@@ -34,11 +34,11 @@ function limited<E extends IEventMap, K extends keyof E>(
 	}) as EventListener<E[K]>
 
 	return prepend
-		? this.prependListener(event, wrapped, true)
+		? this.prependOn(event, wrapped, true)
 		: this.on(event, wrapped, true)
 }
 
-type OnceManyOptions<E extends IEventMap, K extends keyof E> = {
+type OnceManyOptions<E extends IEventMap<E>, K extends keyof E> = {
 	/** 事件触发条件 */
 	predicate?: (...args: EventArgs<E[K]>) => BooleanAble
 	/** 是否手动退订，默认 false */
@@ -49,7 +49,7 @@ type OnceManyOptions<E extends IEventMap, K extends keyof E> = {
  * 只触发一次后自动移除
  * 默认返回 this 以便链式调用；若需手动退订，传入 { manual: true }
  */
-function once<E extends IEventMap, K extends keyof E>(
+function once<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	listener: EventListener<E[K]>,
@@ -65,7 +65,7 @@ function once<E extends IEventMap, K extends keyof E>(
  * 同 once，但将监听器 prepend 到最前；
  * 若需手动退订，传入 { manual: true }
  */
-function prependOnce<E extends IEventMap, K extends keyof E>(
+function prependOnce<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	listener: EventListener<E[K]>,
@@ -83,7 +83,7 @@ function prependOnce<E extends IEventMap, K extends keyof E>(
  * 触发指定次数后自动移除
  * 默认返回 this；若需手动退订，传入 { manual: true }
  */
-function many<E extends IEventMap, K extends keyof E>(
+function many<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	times: number,
@@ -101,7 +101,7 @@ function many<E extends IEventMap, K extends keyof E>(
  * 同 many，但将监听器 prepend 到最前；
  * 若需手动退订，传入 { manual: true }
  */
-function prependMany<E extends IEventMap, K extends keyof E>(
+function prependMany<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	times: number,
@@ -128,7 +128,7 @@ function prependMany<E extends IEventMap, K extends keyof E>(
  *     .many(3, () => console.log('fired 3 times'))
  *     .prependMany(2, () => console.log('first two updates'))
  */
-function when<E extends IEventMap, K extends keyof E>(
+function when<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	predicate?: (...args: EventArgs<E[K]>) => BooleanAble,

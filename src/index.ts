@@ -3,6 +3,7 @@ import { IS_ASYNC, ORIGFUNC } from './symbol'
 // eventified.ts
 import type {
 	EventArgs,
+	EventDescriptor,
 	EventEmitterOptions,
 	EventListener,
 	EventResult,
@@ -10,9 +11,11 @@ import type {
 	Unsubscribe,
 } from './types'
 export * from './types'
-export * from './symbol'
+export * as Symbol from './symbol'
 
-export class Eventure<E extends IEventMap> {
+export class Eventure<
+	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
+> {
 	// ✓ 针对每个 K 保持正确的 listener 类型
 	protected _listeners: { [K in keyof E]?: EventListener<E[K]>[] } =
 		Object.create(null)
@@ -97,6 +100,7 @@ export class Eventure<E extends IEventMap> {
 
 	// ───────── on = alias(addListener) ─────────
 	public on: typeof this.addListener = this.addListener
+	public prependOn: typeof this.prependListener = this.prependListener
 
 	// —— off / removeListener ——
 	public off<K extends keyof E>(event: K, listener: EventListener<E[K]>): this {
@@ -280,4 +284,6 @@ type extra = typeof ext_remover &
 	typeof fire &
 	typeof waterfall
 
-export interface Eventure<E extends IEventMap> extends extra {}
+export interface Eventure<
+	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
+> extends extra {}

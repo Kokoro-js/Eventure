@@ -1,9 +1,9 @@
 // tests/when.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { Eventure } from '@/index'
-import type { EventListener, IEventMap } from '@/types'
+import type { EventListener } from '@/types'
 
-interface Events extends IEventMap {
+interface Events {
 	num: [number]
 	str: [string]
 }

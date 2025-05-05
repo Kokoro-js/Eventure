@@ -9,7 +9,7 @@ import type {
 import type { Eventure } from '..'
 
 // 同步生成器结果：
-export type FireSyncResult<E extends IEventMap, K extends keyof E> =
+export type FireSyncResult<E extends IEventMap<E>, K extends keyof E> =
 	| { type: 'success'; fn: EventListener<E[K]>; result: EventResult<E[K]> }
 	| { type: 'error'; fn: EventListener<E[K]>; error: unknown }
 	| {
@@ -19,7 +19,7 @@ export type FireSyncResult<E extends IEventMap, K extends keyof E> =
 	  }
 
 // 异步生成器结果：
-export type FireAsyncResult<E extends IEventMap, K extends keyof E> =
+export type FireAsyncResult<E extends IEventMap<E>, K extends keyof E> =
 	| {
 			type: 'success'
 			fn: EventListener<E[K]>
@@ -31,7 +31,7 @@ export type FireAsyncResult<E extends IEventMap, K extends keyof E> =
  * 同步触发：按序调用 listener，不 await 异步，
  * 遇异步 listener (IS_ASYNC) 时 yield 出 promise 让外部处理。
  */
-function* fire<E extends IEventMap, K extends keyof E>(
+function* fire<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	...args: EventArgs<E[K]>
@@ -63,7 +63,7 @@ function* fire<E extends IEventMap, K extends keyof E>(
  * 异步触发：按序调用 listener，统一 await 并处理错误，
  * 外部 can for await...of 并根据 type 中断。
  */
-async function* fireAsync<E extends IEventMap, K extends keyof E>(
+async function* fireAsync<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	...args: EventArgs<E[K]>

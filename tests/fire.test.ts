@@ -1,9 +1,8 @@
 // tests/fire.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure, IS_ASYNC, ORIGFUNC } from '@/index'
-import type { IEventMap } from '@/types'
+import { Eventure, Symbol } from '@/index'
 
-interface Events extends IEventMap {
+export interface Events {
 	ev: [string]
 }
 
@@ -53,8 +52,8 @@ describe('Eventified.fire (同步 generator)', () => {
 
 		expect(rec.type).toBe('async')
 		// wrapper 上绑定的 ORIGFUNC 正好是原始 asyncFn
-		expect(rec.fn[ORIGFUNC]).toBe(asyncFn)
-		expect((rec.fn as any)[IS_ASYNC]).toBe(true)
+		expect(rec.fn[Symbol.ORIGFUNC]).toBe(asyncFn)
+		expect((rec.fn as any)[Symbol.IS_ASYNC]).toBe(true)
 		await expect(rec.promise).resolves.toBe('OK')
 	})
 
@@ -115,12 +114,12 @@ describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
 
 		// async 成功 —— 比较 orig func
 		expect(results[2].type).toBe('success')
-		expect(results[2].fn[ORIGFUNC]).toBe(asyncOk)
+		expect(results[2].fn[Symbol.ORIGFUNC]).toBe(asyncOk)
 		expect(results[2].result).toBe('aa')
 
 		// async 返回 Error 实例当作 error —— 比较 orig func
 		expect(results[3].type).toBe('error')
-		expect(results[3].fn[ORIGFUNC]).toBe(asyncErr)
+		expect(results[3].fn[Symbol.ORIGFUNC]).toBe(asyncErr)
 		expect(results[3].error).toBeInstanceOf(Error)
 		expect((results[3].error as Error).message).toBe('bad result')
 	})

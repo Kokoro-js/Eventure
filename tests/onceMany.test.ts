@@ -1,9 +1,9 @@
 // tests/onceMany.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { Eventure } from '@/index'
-import type { IEventMap, Unsubscribe } from '@/types'
+import type { Unsubscribe } from '@/types'
 
-interface Events extends IEventMap {
+interface Events {
 	foo: [string]
 	bar: [number, number]
 }

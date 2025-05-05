@@ -5,9 +5,8 @@ export type EventDescriptor =
 	| readonly [...any[]] // 任意参数元组
 	| ((...args: any[]) => any) // 任意签名函数
 
-/** 事件映射：事件名 -> 描述 */
-export interface IEventMap {
-	[event: string | symbol]: EventDescriptor
+export type IEventMap<T> = {
+	[K in keyof T]: EventDescriptor
 }
 
 /** ——— 原有工具类型 —— */
@@ -38,7 +37,12 @@ export type EventListener<D extends EventDescriptor> = (
 export type Unsubscribe = () => void
 
 /** 构造时可选项，支持 logger 和预分配事件 */
-export interface EventEmitterOptions<E extends IEventMap = IEventMap> {
+export interface EventEmitterOptions<
+	E extends { [K in keyof E]: EventDescriptor } = Record<
+		string,
+		EventDescriptor
+	>,
+> {
 	logger?: Logger
 	/** 如果提供，就会在构造时预先 `this._listeners[event] = []` */
 	events?: Array<keyof E>
