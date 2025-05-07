@@ -159,28 +159,6 @@ export class Eventure<
 	}
 
 	// —— emit ——
-	/**
-	 * 通用的 listeners 查询／处理接口：
-	 * - 不传 options：返回当前 listeners 的快照数组
-	 * - 传 filter：先 filter 再返回快照
-	 * - 传 map：在 (filter 之后) 对每个 listener 调用 map
-	 */
-	public queryListeners<K extends keyof E, R = EventListener<E[K]>>(
-		event: K,
-		options?: {
-			filter?: (listener: EventListener<E[K]>) => boolean
-			map?: (listener: EventListener<E[K]>) => R
-		},
-	): R[] {
-		// 必须返回拷贝才能保证功能正确，否则 once 这些在你没执行完就已经编辑原 arr 了(比如删除)会导致触发器混乱
-		const list = this._listeners[event] ?? []
-		const filtered = options?.filter ? list.filter(options.filter) : list
-		return options?.map
-			? filtered.map(options.map)
-			: // 类型断言：当 map 不存在时，R == EventListener<E[K]>
-				(filtered as unknown as R[])
-	}
-
 	public emit<K extends keyof E>(event: K, ...args: EventArgs<E[K]>): this {
 		const fns: any[] = this.queryListeners(event)
 		if (fns.length === 0) return this
@@ -236,7 +214,7 @@ export class Eventure<
 		...args: EventArgs<E[K]>
 	): Promise<EventResult<E[K]>[]> {
 		const results = await Promise.all(
-			this.queryListeners(event, { map: (fn) => fn(...args) }),
+			this.queryListeners(event).map((fn) => fn(...args)),
 		)
 		return results as EventResult<E[K]>[]
 	}
@@ -252,6 +230,10 @@ export class Eventure<
 
 	public listeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
 		return this._listeners[event]?.slice() ?? []
+	}
+
+	protected queryListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
+		return this._listeners[event] ?? []
 	}
 
 	public removeAllListeners<K extends keyof E>(event?: K): this {

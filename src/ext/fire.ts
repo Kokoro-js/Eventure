@@ -33,10 +33,12 @@ export type FireAsyncResult<E extends IEventMap<E>, K extends keyof E> =
  */
 function* fire<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
-	event: K,
+	eventOrListeners: K | EventListener<E[K]>[],
 	...args: EventArgs<E[K]>
 ): Generator<FireSyncResult<E, K>> {
-	const listeners: EventListener<E[K]>[] = this.queryListeners(event)
+	const listeners: EventListener<E[K]>[] = Array.isArray(eventOrListeners)
+		? eventOrListeners
+		: this.queryListeners(eventOrListeners)
 	for (const fn of listeners) {
 		if ((fn as any)[IS_ASYNC]) {
 			try {
@@ -65,10 +67,12 @@ function* fire<E extends IEventMap<E>, K extends keyof E>(
  */
 async function* fireAsync<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
-	event: K,
+	eventOrListeners: K | EventListener<E[K]>[],
 	...args: EventArgs<E[K]>
 ): AsyncGenerator<FireAsyncResult<E, K>> {
-	const listeners: EventListener<E[K]>[] = this.queryListeners(event)
+	const listeners: EventListener<E[K]>[] = Array.isArray(eventOrListeners)
+		? eventOrListeners
+		: this.queryListeners(eventOrListeners)
 	for (const fn of listeners) {
 		try {
 			const result = await Promise.resolve(fn(...args))
