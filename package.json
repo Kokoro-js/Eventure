@@ -1,18 +1,15 @@
 {
   "name": "eventure",
   "version": "0.2.4",
-  "main": "./dist/index.cjs",
+  "main": "./dist/index.js",
   "module": "./dist/index.mjs",
-  "types": "./dist/index.d.cts",
+  "types": "./dist/index.d.ts",
   "exports": {
-    "require": {
-      "types": "./dist/index.d.cts",
-      "default": "./dist/index.cjs"
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     },
-    "import": {
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
-    }
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/"
@@ -30,8 +27,8 @@
   "scripts": {
     "dev": "bun run --hot .src\\index.ts",
     "test": "bun test",
-    "build": "pkgroll",
-    "prepublish": "pkgroll --minify",
+    "build": "tsdown",
+    "prepublish": "tsdown",
     "lint": "biome lint",
     "format:check": "biome format",
     "format": "biome format --write",
@@ -39,9 +36,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "@types/bun": "^1.2.11",
-    "pkgroll": "^2.12.2",
-    "type-fest": "^4.40.1",
-    "typescript": "^5.8.3"
+    "@types/bun": "^1.2.20",
+    "tsdown": "^0.14.2",
+    "type-fest": "^4.41.0",
+    "typescript": "^5.9.2"
   }
 }
