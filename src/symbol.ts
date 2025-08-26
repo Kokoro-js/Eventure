@@ -1,4 +1,4 @@
-const IS_ASYNC = Symbol('is_async')
-const ORIGFUNC = Symbol('orig')
+const IS_ASYNC = Symbol.for('eventure:is_async')
+const ORIGFUNC = Symbol.for('eventure:orig')
 
 export { IS_ASYNC, ORIGFUNC }

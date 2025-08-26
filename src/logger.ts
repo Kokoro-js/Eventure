@@ -1,10 +1,10 @@
 export type Logger = {
-	trace: (message: string, ...arguments_: unknown[]) => void
-	debug: (message: string, ...arguments_: unknown[]) => void
-	info: (message: string, ...arguments_: unknown[]) => void
-	warn: (message: string, ...arguments_: unknown[]) => void
-	error: (message: string, ...arguments_: unknown[]) => void
-	fatal: (message: string, ...arguments_: unknown[]) => void
+	trace: (...arguments_: unknown[]) => void
+	debug: (...arguments_: unknown[]) => void
+	info: (...arguments_: unknown[]) => void
+	warn: (...arguments_: unknown[]) => void
+	error: (...arguments_: unknown[]) => void
+	fatal: (...arguments_: unknown[]) => void
 }
 
 export const defaultLogger: Logger = {

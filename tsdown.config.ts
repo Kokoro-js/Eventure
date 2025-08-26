@@ -7,10 +7,9 @@ export default defineConfig({
 		index: 'src/index.ts',
 	},
 	dts: {
-		sourcemap: true,
+		build: true,
 	},
 	format: ['esm', 'cjs'],
-	sourcemap: false,
 	clean: true,
 	minify: true,
 	treeshake: true,

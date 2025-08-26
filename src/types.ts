@@ -37,6 +37,7 @@ export type EventListener<D extends EventDescriptor> = (
 export type Unsubscribe = () => void
 
 /** 构造时可选项，支持 logger 和预分配事件 */
+export type ErrorPolicy = 'silent' | 'log' | 'throw'
 export interface EventEmitterOptions<
 	E extends { [K in keyof E]: EventDescriptor } = Record<
 		string,
@@ -50,4 +51,5 @@ export interface EventEmitterOptions<
 	catchPromiseError?: boolean
 	// 默认关闭，用以决定库是否帮你处理一些行为怪异的监听器，比如在同步函数返回 Promise 的行为等，开启会大幅度降低高频下同步函数的性能。
 	checkSyncFuncReturnPromise?: boolean
+	errorPolicy: ErrorPolicy
 }

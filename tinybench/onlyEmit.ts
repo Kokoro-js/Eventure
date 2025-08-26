@@ -4,7 +4,7 @@ import mitt from 'mitt'
 import { Bench, hrtimeNow } from 'tinybench'
 // 记得 build 了再来测试噢
 import { Eventure as MyEmitter } from '../dist/index.mjs'
-import pkg from './package.json' assert { type: 'json' }
+import pkg from './package.json'
 
 const NAME = 'Eventure'
 const EVENT = 'ping'
@@ -36,7 +36,7 @@ const implementations = [
 // —— Pure Sync Benchmark ——
 const benchSync = new Bench({
 	name: `${title} — sync`,
-	time: 200,
+	time: 100,
 	iterations: 10,
 	now: hrtimeNow,
 })
@@ -79,7 +79,7 @@ console.table(benchSync.table())
 // —— End-to-End Async Benchmark ——
 const benchAsync = new Bench({
 	name: `${title} — async`,
-	time: 200,
+	time: 2000,
 	iterations: 10,
 	now: hrtimeNow,
 })

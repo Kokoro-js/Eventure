@@ -1,44 +1,46 @@
 {
-  "name": "eventure",
-  "version": "0.2.4",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "dist/"
-  ],
-  "keywords": [
-    "event",
-    "hook",
-    "emit"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Kokoro-js/eventure.git"
-  },
-  "license": "Apache-2.0",
-  "scripts": {
-    "dev": "bun run --hot .src\\index.ts",
-    "test": "bun test",
-    "build": "tsdown",
-    "prepublish": "tsdown",
-    "lint": "biome lint",
-    "format:check": "biome format",
-    "format": "biome format --write",
-    "type-check": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@types/bun": "^1.2.20",
-    "tsdown": "^0.14.2",
-    "type-fest": "^4.41.0",
-    "typescript": "^5.9.2"
-  }
+	"name": "eventure",
+	"version": "0.2.4",
+	"main": "./dist/index.js",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"./package.json",
+		"./LICENSE"
+	],
+	"keywords": [
+		"event",
+		"hook",
+		"emit"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Kokoro-js/eventure.git"
+	},
+	"license": "Apache-2.0",
+	"scripts": {
+		"dev": "bun run --hot .src\\index.ts",
+		"test": "bun test",
+		"build": "tsdown",
+		"prepublish": "tsdown",
+		"lint": "biome lint",
+		"format:check": "biome format",
+		"format": "biome format --write",
+		"type-check": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.2.2",
+		"@types/bun": "^1.2.21",
+		"tsdown": "^0.14.2",
+		"type-fest": "^4.41.0",
+		"typescript": "^5.9.2"
+	}
 }
