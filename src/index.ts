@@ -15,6 +15,10 @@ import type {
 export * as Symbol from './symbol'
 export * from './types'
 
+declare module '.' {
+	interface Eventure extends extra {}
+}
+
 export class Eventure<
 	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
 > {
@@ -142,9 +146,19 @@ export class Eventure<
 		}
 	}
 
-	// ───────── on = alias(addListener) ─────────
-	public on: typeof this.addListener = this.addListener
-	public prependOn: typeof this.prependListener = this.prependListener
+	// —— on / prependOn ——
+	public on<K extends keyof E>(event: K, listener: EventListener<E[K]>): this {
+		this._add(event, listener, /*prepend=*/ false)
+		return this
+	}
+
+	public prependOn<K extends keyof E>(
+		event: K,
+		listener: EventListener<E[K]>,
+	): this {
+		this._add(event, listener, /*prepend=*/ true)
+		return this
+	}
 
 	// —— off / removeListener ——（保持与 ORIGFUNC 一致的去重语义）
 	public off<K extends keyof E>(event: K, listener: EventListener<E[K]>): this {
@@ -350,7 +364,3 @@ type extra = typeof ext_remover &
 	typeof waitFor &
 	typeof fire &
 	typeof waterfall
-
-export interface Eventure<
-	_E extends IEventMap<_E> = Record<string | symbol, EventDescriptor>,
-> extends extra {}

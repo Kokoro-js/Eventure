@@ -45,7 +45,7 @@ function waitFor<E extends IEventMap<E>, K extends keyof E>(
 
 		off = prepend
 			? this.prependListener(event, listener, true)
-			: this.on(event, listener, true)
+			: this.addListener(event, listener, true)
 	}) as CancellablePromise<EventArgs<E[K]>>
 
 	promise.cancel = () => {

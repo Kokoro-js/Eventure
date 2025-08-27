@@ -8,6 +8,7 @@ export default defineConfig({
 	},
 	dts: {
 		build: true,
+		sourcemap: true,
 	},
 	format: ['esm', 'cjs'],
 	clean: true,
