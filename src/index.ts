@@ -14,11 +14,6 @@ import type {
 
 export * as Symbol from './symbol'
 export * from './types'
-
-declare module '.' {
-	interface Eventure extends extra {}
-}
-
 export class Eventure<
 	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
 > {
@@ -364,3 +359,5 @@ type extra = typeof ext_remover &
 	typeof waitFor &
 	typeof fire &
 	typeof waterfall
+
+export interface Eventure extends extra {}

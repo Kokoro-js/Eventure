@@ -51,5 +51,5 @@ export interface EventEmitterOptions<
 	catchPromiseError?: boolean
 	// 默认关闭，用以决定库是否帮你处理一些行为怪异的监听器，比如在同步函数返回 Promise 的行为等，开启会大幅度降低高频下同步函数的性能。
 	checkSyncFuncReturnPromise?: boolean
-	errorPolicy: ErrorPolicy
+	errorPolicy?: ErrorPolicy
 }
