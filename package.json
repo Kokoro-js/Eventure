@@ -1,6 +1,6 @@
 {
   "name": "eventure",
-  "version": "0.2.8",
+  "version": "0.3.0",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -12,9 +12,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "dist",
-    "./package.json",
-    "./LICENSE"
+    "dist"
   ],
   "keywords": [
     "event",
