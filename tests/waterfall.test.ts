@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure } from '@/index'
+import { Eventure } from '../src'
 
 interface NumberPipelineEvents {
 	numEvent: (value: number, next: (value: number) => number) => number

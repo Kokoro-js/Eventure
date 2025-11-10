@@ -1,5 +1,5 @@
 // eventified.test.ts
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import { Eventure } from '../src'
 
 describe('Eventified 核心功能', () => {
@@ -33,7 +33,7 @@ describe('Eventified 核心功能', () => {
 	it('prependListener 能改变执行顺序', () => {
 		const order: string[] = []
 		emitter.on('syncEvt', () => order.push('second'))
-		emitter.prependListener('syncEvt', () => order.push('first'))
+		emitter.onFront('syncEvt', () => order.push('first'))
 		emitter.emit('syncEvt', 0, '')
 		expect(order).toEqual(['first', 'second'])
 	})
@@ -50,7 +50,7 @@ describe('Eventified 核心功能', () => {
 
 	it('addListener(returnUnsub=true) 返回的 unsubscribe 可取消监听', () => {
 		const calls: number[] = []
-		const unsub = emitter.addListener('syncEvt', (n, s) => calls.push(n), true)
+		const unsub = emitter.on('syncEvt', (n, s) => calls.push(n))
 		emitter.emit('syncEvt', 5, '')
 		unsub()
 		emitter.emit('syncEvt', 6, '')
@@ -97,16 +97,16 @@ describe('Eventified 核心功能', () => {
 		expect(called).toBe(true)
 	})
 
-	it('listenerCount、listeners 以及 removeAllListeners', () => {
+	it('count、listeners 以及 removeAllListeners', () => {
 		const a = () => {}
 		const b = () => {}
 		emitter.on('syncEvt', a)
 		emitter.on('syncEvt', b)
-		expect(emitter.listenerCount('syncEvt')).toBe(2)
+		expect(emitter.count('syncEvt')).toBe(2)
 		expect(emitter.listeners('syncEvt')).toEqual([a, b])
 
-		emitter.removeAllListeners('syncEvt')
-		expect(emitter.listenerCount('syncEvt')).toBe(0)
+		emitter.clear('syncEvt')
+		expect(emitter.count('syncEvt')).toBe(0)
 		expect(emitter.listeners('syncEvt')).toEqual([])
 	})
 })

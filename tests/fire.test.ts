@@ -1,6 +1,6 @@
 // tests/fire.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure, IS_ASYNC, ORIGFUNC } from '../src/index'
+import { Eventure, IS_ASYNC, ORIGFUNC } from '../src'
 
 export interface Events {
 	ev: [string]

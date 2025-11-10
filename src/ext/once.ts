@@ -33,9 +33,7 @@ function limited<E extends IEventMap<E>, K extends keyof E>(
 		}
 	}) as EventListener<E[K]>
 
-	return prepend
-		? this.prependListener(event, wrapped, true)
-		: this.addListener(event, wrapped, true)
+	return prepend ? this.onFront(event, wrapped) : this.on(event, wrapped)
 }
 
 type OnceManyOptions<E extends IEventMap<E>, K extends keyof E> = {

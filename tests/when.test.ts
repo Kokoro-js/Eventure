@@ -1,7 +1,6 @@
 // tests/when.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure } from '@/index'
-import type { EventListener } from '@/types'
+import { Eventure } from '../src'
 
 interface Events {
 	num: [number]
