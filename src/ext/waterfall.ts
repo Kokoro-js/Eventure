@@ -1,5 +1,5 @@
 import type { EventDescriptor, EventListener, IEventMap } from '@/types'
-import type { Eventure } from '..'
+import type { Eventure } from '../eventified'
 
 /** 拆出 "带 next" 的流水线事件 */
 export type SplitWaterfall<D extends EventDescriptor> = D extends (

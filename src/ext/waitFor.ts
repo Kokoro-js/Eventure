@@ -1,5 +1,5 @@
 import type { EventArgs, EventListener, IEventMap, Unsubscribe } from '@/types'
-import type { Eventure } from '..'
+import type { Eventure } from '../eventified'
 
 /**
  * 可取消的 Promise 类型

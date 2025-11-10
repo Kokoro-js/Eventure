@@ -1,5 +1,5 @@
 import type { EventArgs, EventListener, IEventMap, Unsubscribe } from '@/types'
-import type { Eventure } from '..'
+import type { Eventure } from '../eventified'
 
 // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
 type BooleanAble = boolean | undefined | void
@@ -24,7 +24,7 @@ function limited<E extends IEventMap<E>, K extends keyof E>(
 	const wrapped: EventListener<E[K]> = ((...args: EventArgs<E[K]>) => {
 		if (predicate && !predicate(...args)) return
 		try {
-			const fn = this.wrapHelper(listener)
+			const fn = this._wrap(listener)
 			return fn(...args)
 		} finally {
 			if (++count >= times) {
