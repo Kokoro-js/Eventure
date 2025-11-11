@@ -92,3 +92,38 @@ export function createWrapHelper(opts: WrapOptions) {
 		return wrapListener(listener, opts)
 	}
 }
+
+/** Listener array helpers to avoid spread/splice polymorphism on hot paths */
+export function appendListenerCopy<T>(
+	prev: T[] | undefined,
+	listener: T,
+): T[] {
+	if (!prev || prev.length === 0) return [listener]
+	const len = prev.length
+	const next = new Array<T>(len + 1)
+	for (let i = 0; i < len; i++) next[i] = prev[i]!
+	next[len] = listener
+	return next
+}
+
+export function prependListenerCopy<T>(
+	prev: T[] | undefined,
+	listener: T,
+): T[] {
+	if (!prev || prev.length === 0) return [listener]
+	const len = prev.length
+	const next = new Array<T>(len + 1)
+	next[0] = listener
+	for (let i = 0; i < len; i++) next[i + 1] = prev[i]!
+	return next
+}
+
+export function copyWithoutIndex<T>(prev: T[], removeIndex: number): T[] {
+	const len = prev.length
+	const next = new Array<T>(len - 1)
+	for (let i = 0, j = 0; i < len; i++) {
+		if (i === removeIndex) continue
+		next[j++] = prev[i]!
+	}
+	return next
+}

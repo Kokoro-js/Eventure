@@ -37,7 +37,14 @@ import type {
 	IEventMap,
 	Unsubscribe,
 } from './types'
-import { createWrapHelper, ORIGFUNC, onSyncError } from './utils'
+import {
+	appendListenerCopy,
+	copyWithoutIndex,
+	createWrapHelper,
+	ORIGFUNC,
+	onSyncError,
+	prependListenerCopy,
+} from './utils'
 
 /** 订阅句柄：函数即对象，兼容 using/RAII */
 type Subscription = Unsubscribe & { [Symbol.dispose]?: () => void }
@@ -159,10 +166,8 @@ export class Eventure<
 		const prev = this._listeners[event]
 		const usePrepend = forcePrepend ?? opts?.prepend ?? false
 		const next = usePrepend
-			? [fn, ...(prev ?? [])]
-			: prev
-				? [...prev, fn]
-				: [fn]
+			? prependListenerCopy(prev, fn)
+			: appendListenerCopy(prev, fn)
 		this._listeners[event] = next
 
 		if (next.length > 0) this._activeEvents.add(event)
@@ -230,9 +235,7 @@ export class Eventure<
 			this._listeners[event] = undefined
 			this._activeEvents.delete(event)
 		} else {
-			const next = prev.slice()
-			next.splice(idx, 1)
-			this._listeners[event] = next
+			this._listeners[event] = copyWithoutIndex(prev, idx)
 		}
 		return true
 	}
@@ -264,42 +267,56 @@ export class Eventure<
 					}
 				}
 				break
-			case 1:
+			case 1: {
+				const arg0 = args[0]!
 				for (let i = 0; i < len; i++) {
 					try {
-						;(fns[i] as any)(args[0])
+						;(fns[i] as any)(arg0)
 					} catch (err) {
 						this._onSyncError(err)
 					}
 				}
 				break
-			case 2:
+			}
+			case 2: {
+				const arg0 = args[0]!
+				const arg1 = args[1]!
 				for (let i = 0; i < len; i++) {
 					try {
-						;(fns[i] as any)(args[0], args[1])
+						;(fns[i] as any)(arg0, arg1)
 					} catch (err) {
 						this._onSyncError(err)
 					}
 				}
 				break
-			case 3:
+			}
+			case 3: {
+				const arg0 = args[0]!
+				const arg1 = args[1]!
+				const arg2 = args[2]!
 				for (let i = 0; i < len; i++) {
 					try {
-						;(fns[i] as any)(args[0], args[1], args[2])
+						;(fns[i] as any)(arg0, arg1, arg2)
 					} catch (err) {
 						this._onSyncError(err)
 					}
 				}
 				break
-			case 4:
+			}
+			case 4: {
+				const arg0 = args[0]!
+				const arg1 = args[1]!
+				const arg2 = args[2]!
+				const arg3 = args[3]!
 				for (let i = 0; i < len; i++) {
 					try {
-						;(fns[i] as any)(args[0], args[1], args[2], args[3])
+						;(fns[i] as any)(arg0, arg1, arg2, arg3)
 					} catch (err) {
 						this._onSyncError(err)
 					}
 				}
 				break
+			}
 			default:
 				for (let i = 0; i < len; i++) {
 					try {
