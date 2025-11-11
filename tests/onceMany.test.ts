@@ -1,6 +1,5 @@
 // tests/onceMany.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import type { Unsubscribe } from '@/types'
 import { Eventure } from '../src'
 
 interface Events {
@@ -28,16 +27,12 @@ describe('事件一次性监听: once / onceFront', () => {
 		expect(emitter.count('foo')).toBe(0)
 	})
 
-	it('manual=true 时应返回取消订阅函数，取消后不再触发', () => {
+	it('返回的取消订阅函数生效，主动取消后不再触发', () => {
 		const calls: string[] = []
 
-		const unsub = emitter.once(
-			'foo',
-			(msg) => {
-				calls.push(msg)
-			},
-			{ manual: true },
-		) as Unsubscribe
+		const unsub = emitter.once('foo', (msg) => {
+			calls.push(msg)
+		})
 
 		// 取消订阅后即便 emit 也不触发
 		unsub()
@@ -106,17 +101,12 @@ describe('事件多次监听: many / manyFront', () => {
 		expect(emitter.count('foo')).toBe(0)
 	})
 
-	it('manual=true 时应返回取消订阅函数，取消后不再触发', () => {
+	it('many 返回的取消订阅函数生效，主动取消后不再触发', () => {
 		const calls: string[] = []
 
-		const unsub = emitter.many(
-			'foo',
-			2,
-			(msg) => {
-				calls.push(msg)
-			},
-			{ manual: true },
-		) as Unsubscribe
+		const unsub = emitter.many('foo', 2, (msg) => {
+			calls.push(msg)
+		})
 
 		// 手动取消订阅后无论是否达到次数，都不会触发
 		unsub()

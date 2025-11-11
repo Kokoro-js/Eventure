@@ -1,5 +1,32 @@
 // eventified.ts
+
+import {
+	type FireAsyncRecord,
+	type FireSyncRecord,
+	fireAsyncFromListeners,
+	fireFromListeners,
+} from './ext/fireShared'
+import {
+	createWhenGuard,
+	type GuardPredicate,
+	limitSingle,
+	manyWithOps,
+	onceWithOps,
+	type RegisterSingle,
+	type WhenGuard,
+} from './ext/limitSingle'
+import {
+	type CancellablePromise,
+	type WaitForSingleOptions,
+	waitForSingle,
+} from './ext/waitForSingle'
+import {
+	runWaterfall,
+	type SplitWaterfall,
+	type WFResult,
+} from './ext/waterfallShared'
 import { defaultLogger, type Logger } from './logger'
+import type { OnOptions } from './options'
 import type {
 	ErrorPolicy,
 	EventArgs,
@@ -12,16 +39,48 @@ import type {
 } from './types'
 import { createWrapHelper, ORIGFUNC, onSyncError } from './utils'
 
-/** 统一的注册选项：保持入参稳定，有利于内联与JIT */
-export interface OnOptions {
-	/** 是否前插（默认尾插） */
-	prepend?: boolean
-	/** 绑定 AbortSignal，触发后自动退订 */
-	signal?: AbortSignal
-}
-
 /** 订阅句柄：函数即对象，兼容 using/RAII */
 type Subscription = Unsubscribe & { [Symbol.dispose]?: () => void }
+
+const noopSubscription: Subscription = (() => {}) as Subscription
+try {
+	;(noopSubscription as any)[Symbol.dispose] = noopSubscription
+} catch {
+	/* older runtimes may lack Symbol.dispose */
+}
+
+export type EventureFireSyncResult<
+	E extends IEventMap<E>,
+	K extends keyof E,
+> = FireSyncRecord<E[K]>
+export type EventureFireAsyncResult<
+	E extends IEventMap<E>,
+	K extends keyof E,
+> = FireAsyncRecord<E[K]>
+
+export type EventureWaitForOptions<
+	E extends IEventMap<E>,
+	K extends keyof E,
+> = WaitForSingleOptions<E[K]>
+export type EventureWaitForPromise<
+	E extends IEventMap<E>,
+	K extends keyof E,
+> = CancellablePromise<EventArgs<E[K]>>
+
+export type WFKeys<E extends IEventMap<E>> = {
+	[K in keyof E]: SplitWaterfall<E[K]> extends never ? never : K
+}[keyof E]
+
+export type EventureSplit<
+	E extends IEventMap<E>,
+	K extends WFKeys<E>,
+> = SplitWaterfall<E[K]>
+export type EventureWFResult<
+	E extends IEventMap<E>,
+	K extends WFKeys<E>,
+> = EventureSplit<E, K> extends never
+	? WFResult<never>
+	: WFResult<EventureSplit<E, K>['ret']>
 
 export class Eventure<
 	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
@@ -43,7 +102,6 @@ export class Eventure<
 	protected _catchPromiseError: boolean
 	protected _checkSyncFuncReturnPromise: boolean
 	protected _errorPolicy: ErrorPolicy
-
 	/** 预构建包装器，热路径零分配 */
 	public _wrap: <T extends Function>(listener: T) => T
 
@@ -88,18 +146,19 @@ export class Eventure<
 		return unsub
 	}
 
-	/** 统一注册：返回 Subscription（函数），避免重载与布尔位 */
-	public on<K extends keyof E>(
+	private _register<K extends keyof E>(
 		event: K,
 		listener: EventListener<E[K]>,
 		opts?: OnOptions,
+		forcePrepend?: boolean,
 	): Subscription {
-		// 若 signal 已经 aborted，直接返回空操作句柄，避免注册后又立刻退订的抖动
-		if (opts?.signal?.aborted) return (() => {}) as Subscription
+		const signal = opts?.signal
+		if (signal?.aborted) return noopSubscription
 
 		const fn = this._wrap(listener) as EventListener<E[K]>
 		const prev = this._listeners[event]
-		const next = opts?.prepend
+		const usePrepend = forcePrepend ?? opts?.prepend ?? false
+		const next = usePrepend
 			? [fn, ...(prev ?? [])]
 			: prev
 				? [...prev, fn]
@@ -115,15 +174,28 @@ export class Eventure<
 
 		const sub = this._makeSubscription(event, listener)
 
-		// 绑定 AbortSignal：触发后自动退订（不捕获，保持同步语义）
-		if (opts?.signal) {
+		if (signal) {
 			const abortUnsub = () => {
 				sub()
-				opts.signal!.removeEventListener('abort', abortUnsub)
+				signal.removeEventListener('abort', abortUnsub)
 			}
-			opts.signal.addEventListener('abort', abortUnsub, { once: true })
+			signal.addEventListener('abort', abortUnsub, { once: true })
 		}
 		return sub
+	}
+
+	/** 统一注册：返回 Subscription（函数），避免重载与布尔位 */
+	public on<K extends keyof E>(
+		event: K,
+		listener: EventListener<E[K]>,
+		opts?: OnOptions,
+	): Subscription {
+		return this._register(event, listener, opts)
+	}
+
+	private _singleRegister<K extends keyof E>(event: K): RegisterSingle<E[K]> {
+		return (listener, prepend) =>
+			this._register(event, listener, undefined, prepend ?? false)
 	}
 
 	/** 前插语义的快捷方式，等价于 on(event, listener, { prepend: true }) */
@@ -132,7 +204,7 @@ export class Eventure<
 		listener: EventListener<E[K]>,
 		opts?: Omit<OnOptions, 'prepend'>,
 	): Subscription {
-		return this.on(event, listener, { ...opts, prepend: true })
+		return this._register(event, listener, opts, true)
 	}
 
 	/** 移除单个监听器；返回是否真的移除了一个条目 */
@@ -158,7 +230,8 @@ export class Eventure<
 			this._listeners[event] = undefined
 			this._activeEvents.delete(event)
 		} else {
-			const next = prev.slice(0, idx).concat(prev.slice(idx + 1))
+			const next = prev.slice()
+			next.splice(idx, 1)
 			this._listeners[event] = next
 		}
 		return true
@@ -262,25 +335,147 @@ export class Eventure<
 	public listeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
 		return this._listeners[event]?.slice() ?? []
 	}
-	protected queryListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
+	public queryListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
 		return this._listeners[event] ?? []
 	}
+
+	/** 基础 limit 实现：面向自定义组合 */
+	public limit<K extends keyof E>(
+		event: K,
+		listener: EventListener<E[K]>,
+		times = 1,
+		prepend = false,
+		predicate?: GuardPredicate<E[K]>,
+	): Unsubscribe {
+		const register = this._singleRegister(event)
+		return limitSingle(
+			this._wrap,
+			register,
+			listener,
+			times,
+			prepend,
+			predicate,
+		)
+	}
+
+	public once<K extends keyof E>(
+		event: K,
+		listener: EventListener<E[K]>,
+		predicate?: GuardPredicate<E[K]>,
+	): Unsubscribe {
+		const register = this._singleRegister(event)
+		return onceWithOps(this._wrap, register, listener, predicate, false)
+	}
+
+	public onceFront<K extends keyof E>(
+		event: K,
+		listener: EventListener<E[K]>,
+		predicate?: GuardPredicate<E[K]>,
+	): Unsubscribe {
+		const register = this._singleRegister(event)
+		return onceWithOps(this._wrap, register, listener, predicate, true)
+	}
+
+	public many<K extends keyof E>(
+		event: K,
+		times: number,
+		listener: EventListener<E[K]>,
+		predicate?: GuardPredicate<E[K]>,
+	): Unsubscribe {
+		const register = this._singleRegister(event)
+		return manyWithOps(this._wrap, register, times, listener, predicate, false)
+	}
+
+	public manyFront<K extends keyof E>(
+		event: K,
+		times: number,
+		listener: EventListener<E[K]>,
+		predicate?: GuardPredicate<E[K]>,
+	): Unsubscribe {
+		const register = this._singleRegister(event)
+		return manyWithOps(this._wrap, register, times, listener, predicate, true)
+	}
+
+	public when<K extends keyof E>(
+		event: K,
+		predicate?: GuardPredicate<E[K]>,
+	): WhenGuard<E[K]> {
+		const register = this._singleRegister(event)
+		return createWhenGuard(this._wrap, register, predicate)
+	}
+
+	public waitFor<K extends keyof E>(
+		event: K,
+		options: EventureWaitForOptions<E, K> = {},
+	): EventureWaitForPromise<E, K> {
+		const register = this._singleRegister(event)
+		return waitForSingle(this._wrap, register, { ...options }, String(event))
+	}
+
+	public fire<K extends keyof E>(
+		event: K,
+		...args: EventArgs<E[K]>
+	): Generator<EventureFireSyncResult<E, K>>
+	public fire<K extends keyof E>(
+		listeners: EventListener<E[K]>[],
+		...args: EventArgs<E[K]>
+	): Generator<EventureFireSyncResult<E, K>>
+	public fire(
+		eventOrListeners: any,
+		...args: any[]
+	): Generator<FireSyncRecord<any>> {
+		if (Array.isArray(eventOrListeners)) {
+			return fireFromListeners(eventOrListeners, args)
+		}
+		return fireFromListeners(this.queryListeners(eventOrListeners), args)
+	}
+
+	public fireAsync<K extends keyof E>(
+		event: K,
+		...args: EventArgs<E[K]>
+	): AsyncGenerator<EventureFireAsyncResult<E, K>>
+	public fireAsync<K extends keyof E>(
+		listeners: EventListener<E[K]>[],
+		...args: EventArgs<E[K]>
+	): AsyncGenerator<EventureFireAsyncResult<E, K>>
+	public fireAsync(
+		eventOrListeners: any,
+		...args: any[]
+	): AsyncGenerator<FireAsyncRecord<any>> {
+		if (Array.isArray(eventOrListeners)) {
+			return fireAsyncFromListeners(eventOrListeners, args)
+		}
+		return fireAsyncFromListeners(this.queryListeners(eventOrListeners), args)
+	}
+
+	public waterfall<K extends WFKeys<E>>(
+		event: K,
+		...args: EventureSplit<E, K> extends never
+			? never[]
+			: [...EventureSplit<E, K>['args'], EventureSplit<E, K>['next']]
+	): EventureWFResult<E, K>
+	public waterfall<K extends WFKeys<E>>(
+		event: K,
+		...args: EventureSplit<E, K> extends never
+			? never[]
+			: EventureSplit<E, K>['args']
+	): EventureWFResult<E, K>
+	public waterfall<K extends WFKeys<E>>(
+		listeners: EventListener<E[K]>[],
+		...args: EventureSplit<E, K> extends never
+			? never[]
+			: EventureSplit<E, K>['args']
+	): EventureWFResult<E, K>
+	public waterfall<K extends WFKeys<E>>(
+		listeners: EventListener<E[K]>[],
+		...args: EventureSplit<E, K> extends never
+			? never[]
+			: [...EventureSplit<E, K>['args'], EventureSplit<E, K>['next']]
+	): EventureWFResult<E, K>
+	public waterfall(eventOrListeners: any, ...args: any[]): WFResult<any> {
+		const callbacks: EventListener<any>[] = Array.isArray(eventOrListeners)
+			? eventOrListeners
+			: this.queryListeners(eventOrListeners)
+		return runWaterfall(callbacks, args.slice())
+	}
 }
-
-/** —— 扩展模块混入（保持不变） —— */
-import * as fire from './ext/fire'
-import * as ext_remover from './ext/once'
-import * as waitFor from './ext/waitFor'
-import * as waterfall from './ext/waterfall'
-
-Object.assign(Eventure.prototype, {
-	...ext_remover,
-	...waitFor,
-	...fire,
-	...waterfall,
-})
-type extra = typeof ext_remover &
-	typeof waitFor &
-	typeof fire &
-	typeof waterfall
-export interface Eventure extends extra {}
