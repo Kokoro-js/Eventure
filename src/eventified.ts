@@ -15,7 +15,11 @@ import {
 	type RegisterSingle,
 	type WhenGuard,
 } from './ext/limitSingle'
-import { type WaitForSingleOptions, waitForSingle } from './ext/waitForSingle'
+import {
+	type CancellablePromise,
+	type WaitForSingleOptions,
+	waitForSingle,
+} from './ext/waitForSingle'
 import {
 	runWaterfall,
 	type SplitWaterfall,
@@ -58,6 +62,10 @@ export type EventureWaitForOptions<
 	E extends IEventMap<E>,
 	K extends keyof E,
 > = WaitForSingleOptions<E[K]>
+export type EventureWaitForPromise<
+	E extends IEventMap<E>,
+	K extends keyof E,
+> = CancellablePromise<EventArgs<E[K]>>
 
 export type WFKeys<E extends IEventMap<E>> = {
 	[K in keyof E]: SplitWaterfall<E[K]> extends never ? never : K
@@ -399,7 +407,7 @@ export class Eventure<
 	public waitFor<K extends keyof E>(
 		event: K,
 		options: EventureWaitForOptions<E, K> = {},
-	) {
+	): EventureWaitForPromise<E, K> {
 		const register = this._singleRegister(event)
 		return waitForSingle(this._wrap, register, { ...options }, String(event))
 	}

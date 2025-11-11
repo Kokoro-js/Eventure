@@ -6,7 +6,7 @@ import type {
 	Unsubscribe,
 } from '@/types'
 
-interface CancellablePromise<T> extends Promise<T> {
+export interface CancellablePromise<T> extends Promise<T> {
 	cancel: () => void
 }
 

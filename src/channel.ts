@@ -12,7 +12,11 @@ import {
 	type RegisterSingle,
 	type WhenGuard,
 } from './ext/limitSingle'
-import { type WaitForSingleOptions, waitForSingle } from './ext/waitForSingle'
+import {
+	type CancellablePromise,
+	type WaitForSingleOptions,
+	waitForSingle,
+} from './ext/waitForSingle'
 import {
 	type SplitWaterfall as CoreSplitWaterfall,
 	runWaterfall,
@@ -55,6 +59,8 @@ export type ChannelWFResult<D extends EventDescriptor> =
 		: WFResult<ChannelSplit<D>['ret']>
 export type ChannelWaitForOptions<D extends EventDescriptor> =
 	WaitForSingleOptions<D>
+export type ChannelWaitForPromise<D extends EventDescriptor> =
+	CancellablePromise<EventArgs<D>>
 
 type ChannelWhenReturn<D extends EventDescriptor> = WhenGuard<D>
 
@@ -318,7 +324,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return createWhenGuard(this._wrap, this._singleRegister, predicate)
 	}
 
-	public waitFor(options?: ChannelWaitForOptions<D>) {
+	public waitFor(options?: ChannelWaitForOptions<D>): ChannelWaitForPromise<D> {
 		return waitForSingle(this._wrap, this._singleRegister, options, 'channel')
 	}
 
@@ -377,8 +383,8 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 	public waterfall(...args: any[]): ChannelWFResult<D> {
 		if (Array.isArray(args[0])) {
 			const [listeners, ...rest] = args as [EventListener<D>[], ...any[]]
-			return runWaterfall(listeners, rest.slice())
+			return runWaterfall(listeners, rest.slice()) as any
 		}
-		return runWaterfall(this._listeners, args.slice())
+		return runWaterfall(this._listeners, args.slice()) as any
 	}
 }
