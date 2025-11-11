@@ -1,5 +1,5 @@
 // eventified.test.ts
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Eventure } from '../src'
 
 describe('Eventified 核心功能', () => {
@@ -71,30 +71,69 @@ describe('Eventified 核心功能', () => {
 	it('异步监听器能不将 emit 拖入微任务', async () => {
 		let called = false
 		emitter.on('asyncEvt', async (msg) => {
+			await Promise.resolve()
 			if (msg === 'test') called = true
 		})
-		emitter.on('asyncEvt', (msg) => {
+		const syncObserver = mock((msg: string) => {
 			expect(called).toBe(false)
 		})
+		emitter.on('asyncEvt', syncObserver)
 		emitter.emit('asyncEvt', 'test')
 		// 等待下一个微任务
 		await Promise.resolve()
+		expect(syncObserver.mock.calls.length).toBe(1)
 		expect(called).toBe(true)
 	})
 
-	it('异步监听器抛错时不向外抛出（已被内部 catch）', async () => {
+	it('超过 maxListeners 会触发 logger.warn', () => {
+		const warn = mock(() => {})
+		const logger = {
+			trace: () => {},
+			debug: () => {},
+			info: () => {},
+			warn,
+			error: () => {},
+			fatal: () => {},
+		}
+		const local = new Eventure<
+			{
+				syncEvt: [number, string]
+			}
+		>({
+			logger,
+		})
+		local.maxListeners = 1
+		local.on('syncEvt', () => {})
+		local.on('syncEvt', () => {})
+		expect(warn.mock.calls.length).toBe(1)
+		expect(String(warn.mock.calls[0][0])).toContain('syncEvt')
+	})
+
+	it('异步监听器抛错时不向外抛出并交由 logger.error 处理', async () => {
+		const errorSpy = mock(() => {})
+		const logger = {
+			trace: () => {},
+			debug: () => {},
+			info: () => {},
+			warn: () => {},
+			error: errorSpy,
+			fatal: () => {},
+		}
+		emitter = new Eventure({ logger })
 		let called = false
-		// 不应该抛出异常
 		expect(() => {
 			emitter.on('asyncEvt', async () => {
 				called = true
+				await Promise.resolve()
 				throw new Error('failure')
 			})
 			emitter.emit('asyncEvt', 'oops')
 		}).not.toThrow()
-		// 等待内部 promise 完成
+		// 等待内部 promise 完成（两次微任务以覆盖 async 返回值和 catch）
+		await Promise.resolve()
 		await Promise.resolve()
 		expect(called).toBe(true)
+		expect(errorSpy.mock.calls.length).toBe(1)
 	})
 
 	it('count、listeners 以及 removeAllListeners', () => {

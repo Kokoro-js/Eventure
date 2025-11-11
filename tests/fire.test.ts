@@ -71,6 +71,27 @@ describe('Eventified.fire (同步 generator)', () => {
 		expect(v).toBeInstanceOf(Error)
 		expect((v as Error).message).toBe('boom')
 	})
+
+	it('返回 Promise 但非 async 的 listener 也会被识别为 async', async () => {
+		const promiseFn = (s: string) => Promise.resolve().then(() => `${s}!`)
+		emitter.on('ev', promiseFn)
+
+		const rec = emitter.fire('ev', 'yo').next().value
+		expect(rec.type).toBe('async')
+		await expect(rec.promise).resolves.toBe('yo!')
+	})
+
+	it('Promise listener 的 rejection 以 async record 暴露', async () => {
+		const promiseFn = (s: string) =>
+			Promise.resolve().then(() => {
+				throw new Error(`bad:${s}`)
+			})
+		emitter.on('ev', promiseFn)
+
+		const rec = emitter.fire('ev', 'err').next().value
+		expect(rec.type).toBe('async')
+		await expect(rec.promise).rejects.toThrow('bad:err')
+	})
 })
 
 describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
@@ -149,5 +170,19 @@ describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
 		// @ts-ignore
 		await iter.return?.()
 		expect(count).toBe(2)
+	})
+
+	it('promise-returning listener rejection 会在 fireAsync 中产出 error 记录', async () => {
+		const promiseFn = (_s: string) =>
+			Promise.resolve().then(() => {
+				throw new Error('reject:' + _s)
+			})
+		emitter.on('ev', promiseFn)
+
+		const iter = emitter.fireAsync('ev', 'NOPE')
+		const first = await iter.next()
+		expect(first.value.type).toBe('error')
+		expect(first.value.error).toBeInstanceOf(Error)
+		expect((first.value.error as Error).message).toBe('reject:NOPE')
 	})
 })

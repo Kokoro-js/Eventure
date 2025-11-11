@@ -5,7 +5,7 @@ import type {
 	EventListener,
 	EventResult,
 } from '@/types'
-import { IS_ASYNC } from '@/utils'
+import { IS_ASYNC, isPromiseLike } from '@/utils'
 
 export type FireSyncRecord<D extends EventDescriptor> =
 	| { type: 'success'; fn: EventListener<D>; result: EventResult<D> }
@@ -29,16 +29,23 @@ export function* fireFromListeners<D extends EventDescriptor>(
 		const fn = listeners[i]!
 		if ((fn as any)[IS_ASYNC]) {
 			try {
-				const promise = fn(...args) as Promise<EventResult<D>>
+				const promise = fn(...args) as Awaitable<EventResult<D>>
 				yield { type: 'async', fn, promise }
 			} catch (error) {
 				yield { type: 'error', fn, error }
 			}
 			continue
 		}
-
 		try {
 			const result = fn(...args)
+			if (isPromiseLike(result)) {
+				yield {
+					type: 'async',
+					fn,
+					promise: Promise.resolve(result) as Awaitable<EventResult<D>>,
+				}
+				continue
+			}
 			yield { type: 'success', fn, result }
 		} catch (error) {
 			yield { type: 'error', fn, error }
