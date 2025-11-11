@@ -1,6 +1,6 @@
 // tests/waitFor.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure } from '@/index'
+import { Eventure } from '../src'
 
 interface Events {
 	ready: []
@@ -22,7 +22,7 @@ describe('Eventure.waitFor 方法', () => {
 		const args = await p
 		expect(args).toEqual([42])
 		// resolve 后应自动移除监听器
-		expect(emitter.listenerCount('data')).toBe(0)
+		expect(emitter.count('data')).toBe(0)
 	})
 
 	it('在超时未触发时应 reject，并移除监听器', async () => {
@@ -31,7 +31,7 @@ describe('Eventure.waitFor 方法', () => {
 		await expect(p).rejects.toThrow(
 			`waitFor 'ready' timeout after ${timeoutMs}ms`,
 		)
-		expect(emitter.listenerCount('ready')).toBe(0)
+		expect(emitter.count('ready')).toBe(0)
 	})
 
 	it('带 filter 时若无匹配值应在超时后 reject', async () => {
@@ -44,7 +44,7 @@ describe('Eventure.waitFor 方法', () => {
 		await expect(p).rejects.toThrow(
 			`waitFor 'data' timeout after ${timeoutMs}ms`,
 		)
-		expect(emitter.listenerCount('data')).toBe(0)
+		expect(emitter.count('data')).toBe(0)
 	})
 
 	it('带 filter 时应跳过不匹配的事件，直到第一个匹配后 resolve', async () => {
@@ -58,10 +58,10 @@ describe('Eventure.waitFor 方法', () => {
 		}, 0)
 		const args = await p
 		expect(args).toEqual([20])
-		expect(emitter.listenerCount('data')).toBe(0)
+		expect(emitter.count('data')).toBe(0)
 	})
 
-	it('调用 cancel 后无论是否满足条件都不应 resolve 或 reject', async () => {
+	it('调用 cancel 后无论是否满足条件都应 reject', async () => {
 		const p = emitter.waitFor('data', { timeout: 1000 })
 		// 立即取消
 		p.cancel()
@@ -71,8 +71,8 @@ describe('Eventure.waitFor 方法', () => {
 			p.then(() => 'resolved').catch(() => 'rejected'),
 			new Promise<'no-resolve'>((r) => setTimeout(() => r('no-resolve'), 50)),
 		])
-		expect(result).toBe('no-resolve')
-		expect(emitter.listenerCount('data')).toBe(0)
+		expect(result).toBe('rejected')
+		expect(emitter.count('data')).toBe(0)
 	})
 
 	it('在 resolve 之后调用 cancel 应为无操作且不抛异常', async () => {

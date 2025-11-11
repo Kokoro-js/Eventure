@@ -1,132 +1,106 @@
 import type { EventArgs, EventListener, IEventMap, Unsubscribe } from '@/types'
-import type { Eventure } from '..'
+import type { Eventure } from '../eventified'
 
-// biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+// biome-ignore lint/suspicious/noConfusingVoidType: intentional
 type BooleanAble = boolean | undefined | void
 
 /**
- * 通用触发次数限制函数：在满足 predicate 时计数，达到次数后自动取消监听
- * 支持 options.prepend 决定使用 prependListener 还是 on
+ * 内核：限制触发次数（times >= 1）
+ * 参数顺序：event, listener, times=1, prepend=false, predicate?
+ * - 无 predicate 路径无条件判断（更易被内联）
+ * - 退订幂等
+ * - 在 finally 中计数并退订：无论回调抛错均会消耗配额并在归零时退订
  */
-function limited<E extends IEventMap<E>, K extends keyof E>(
+function limit<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	listener: EventListener<E[K]>,
-	times: number,
-	options?: {
-		predicate?: (...args: EventArgs<E[K]>) => BooleanAble
-		prepend?: boolean
-	},
+	times = 1,
+	prepend = false,
+	predicate?: (...args: EventArgs<E[K]>) => BooleanAble,
 ): Unsubscribe {
-	let count = 0
-	const { predicate, prepend } = options || {}
+	if (times < 1) throw new Error('times must be >= 1')
 
-	const wrapped: EventListener<E[K]> = ((...args: EventArgs<E[K]>) => {
-		if (predicate && !predicate(...args)) return
-		try {
-			const fn = this.wrapHelper(listener)
-			return fn(...args)
-		} finally {
-			if (++count >= times) {
-				this.off(event, wrapped)
+	const wrapped = this._wrap(listener) // 启动即一次 wrap
+	let left = times
+
+	// 幂等退订：保存真实 off；置空即视为已退
+	let offRef: Unsubscribe | null = null
+	const unsubscribe: Unsubscribe = () => {
+		const off = offRef
+		if (off) {
+			offRef = null
+			off()
+		}
+	}
+
+	if (!predicate) {
+		const handler = ((...args: EventArgs<E[K]>) => {
+			try {
+				wrapped(...args)
+			} finally {
+				if (--left === 0) unsubscribe()
 			}
+		}) as EventListener<E[K]>
+		offRef = prepend ? this.onFront(event, handler) : this.on(event, handler)
+		return unsubscribe
+	}
+
+	const handler = ((...args: EventArgs<E[K]>) => {
+		if (!predicate(...args)) return
+		try {
+			wrapped(...args)
+		} finally {
+			if (--left === 0) unsubscribe()
 		}
 	}) as EventListener<E[K]>
-
-	return prepend
-		? this.prependListener(event, wrapped, true)
-		: this.addListener(event, wrapped, true)
+	offRef = prepend ? this.onFront(event, handler) : this.on(event, handler)
+	return unsubscribe
 }
 
-type OnceManyOptions<E extends IEventMap<E>, K extends keyof E> = {
-	/** 事件触发条件 */
-	predicate?: (...args: EventArgs<E[K]>) => BooleanAble
-	/** 是否手动退订，默认 false */
-	manual?: boolean
-}
+/* ----------------------------- 友好导出 ------------------------------ */
 
-/**
- * 只触发一次后自动移除
- * 默认返回 this 以便链式调用；若需手动退订，传入 { manual: true }
- */
 function once<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	listener: EventListener<E[K]>,
-	options?: OnceManyOptions<E, K>,
-): Eventure<E> | Unsubscribe {
-	const { manual } = options || {}
-	const unsub = limited.call(this, event, listener, 1, options)
-	return manual ? unsub : this
+	predicate?: (...args: EventArgs<E[K]>) => BooleanAble,
+): Unsubscribe {
+	return limit.call(this, event, listener, 1, false, predicate)
 }
 
-/**
- * 前置触发一次后自动移除
- * 同 once，但将监听器 prepend 到最前；
- * 若需手动退订，传入 { manual: true }
- */
-function prependOnce<E extends IEventMap<E>, K extends keyof E>(
+function onceFront<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	listener: EventListener<E[K]>,
-	options?: OnceManyOptions<E, K>,
-): Eventure<E> | Unsubscribe {
-	const { manual } = options || {}
-	const unsub = limited.call(this, event, listener, 1, {
-		...options,
-		prepend: true,
-	})
-	return manual ? unsub : this
+	predicate?: (...args: EventArgs<E[K]>) => BooleanAble,
+): Unsubscribe {
+	return limit.call(this, event, listener, 1, true, predicate)
 }
 
-/**
- * 触发指定次数后自动移除
- * 默认返回 this；若需手动退订，传入 { manual: true }
- */
 function many<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	times: number,
 	listener: EventListener<E[K]>,
-	options?: OnceManyOptions<E, K>,
-): Eventure<E> | Unsubscribe {
-	if (times < 1) throw new Error('times must bigger than 0')
-	const { manual } = options || {}
-	const unsub = limited.call(this, event, listener, times, options)
-	return manual ? unsub : this
+	predicate?: (...args: EventArgs<E[K]>) => BooleanAble,
+): Unsubscribe {
+	return limit.call(this, event, listener, times, false, predicate)
 }
 
-/**
- * 前置触发多次后自动移除
- * 同 many，但将监听器 prepend 到最前；
- * 若需手动退订，传入 { manual: true }
- */
-function prependMany<E extends IEventMap<E>, K extends keyof E>(
+function manyFront<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
 	event: K,
 	times: number,
 	listener: EventListener<E[K]>,
-	options?: OnceManyOptions<E, K>,
-): Eventure<E> | Unsubscribe {
-	if (times < 1) throw new Error('times must bigger than 0')
-	const { manual } = options || {}
-	const unsub = limited.call(this, event, listener, times, {
-		...options,
-		prepend: true,
-	})
-	return manual ? unsub : this
+	predicate?: (...args: EventArgs<E[K]>) => BooleanAble,
+): Unsubscribe {
+	return limit.call(this, event, listener, times, true, predicate)
 }
 
 /**
- * 条件触发工具：链式调用 .once/.prependOnce/.many/.prependMany
- *
- * 示例：
- *   emitter.when('data', v => v !== null)
- *     .once(v => console.log(v))
- *     .prependOnce(v => console.log('first', v), { manual: true })
- *   emitter.when('update')
- *     .many(3, () => console.log('fired 3 times'))
- *     .prependMany(2, () => console.log('first two updates'))
+ * 条件构建器：固定 event + predicate，避免重复传参
+ * - 四个方法统一返回 Unsubscribe
  */
 function when<E extends IEventMap<E>, K extends keyof E>(
 	this: Eventure<E>,
@@ -134,37 +108,15 @@ function when<E extends IEventMap<E>, K extends keyof E>(
 	predicate?: (...args: EventArgs<E[K]>) => BooleanAble,
 ) {
 	return {
-		once: (
-			listener: EventListener<E[K]>,
-			options?: Omit<OnceManyOptions<E, K>, 'predicate'>,
-		): Unsubscribe =>
-			limited.call(this, event, listener, 1, { predicate, ...options }),
-		prependOnce: (
-			listener: EventListener<E[K]>,
-			options?: Omit<OnceManyOptions<E, K>, 'predicate'>,
-		): Unsubscribe =>
-			limited.call(this, event, listener, 1, {
-				predicate,
-				prepend: true,
-				...options,
-			}),
-		many: (
-			times: number,
-			listener: EventListener<E[K]>,
-			options?: Omit<OnceManyOptions<E, K>, 'predicate'>,
-		): Unsubscribe =>
-			limited.call(this, event, listener, times, { predicate, ...options }),
-		prependMany: (
-			times: number,
-			listener: EventListener<E[K]>,
-			options?: Omit<OnceManyOptions<E, K>, 'predicate'>,
-		): Unsubscribe =>
-			limited.call(this, event, listener, times, {
-				predicate,
-				prepend: true,
-				...options,
-			}),
+		once: (listener: EventListener<E[K]>) =>
+			limit.call(this, event, listener, 1, false, predicate),
+		onceFront: (listener: EventListener<E[K]>) =>
+			limit.call(this, event, listener, 1, true, predicate),
+		many: (times: number, listener: EventListener<E[K]>) =>
+			limit.call(this, event, listener, times, false, predicate),
+		manyFront: (times: number, listener: EventListener<E[K]>) =>
+			limit.call(this, event, listener, times, true, predicate),
 	}
 }
 
-export { once, prependOnce, many, prependMany, when }
+export { limit, once, onceFront, many, manyFront, when }

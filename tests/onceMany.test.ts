@@ -1,14 +1,14 @@
 // tests/onceMany.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure } from '@/index'
 import type { Unsubscribe } from '@/types'
+import { Eventure } from '../src'
 
 interface Events {
 	foo: [string]
 	bar: [number, number]
 }
 
-describe('事件一次性监听: once / prependOnce', () => {
+describe('事件一次性监听: once / onceFront', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
 		emitter = new Eventure()
@@ -25,7 +25,7 @@ describe('事件一次性监听: once / prependOnce', () => {
 		emitter.emit('foo', 'second')
 
 		expect(calls).toEqual(['first'])
-		expect(emitter.listenerCount('foo')).toBe(0)
+		expect(emitter.count('foo')).toBe(0)
 	})
 
 	it('manual=true 时应返回取消订阅函数，取消后不再触发', () => {
@@ -44,25 +44,25 @@ describe('事件一次性监听: once / prependOnce', () => {
 
 		emitter.emit('foo', 'will-not-fire')
 		expect(calls).toEqual([])
-		expect(emitter.listenerCount('foo')).toBe(0)
+		expect(emitter.count('foo')).toBe(0)
 	})
 
-	it('.prependOnce 应将监听器前置并保持调用顺序', () => {
+	it('.onceFront 应将监听器前置并保持调用顺序', () => {
 		const calls: string[] = []
 
 		emitter.on('bar', (a, b) => {
 			calls.push(`on:${a + b}`)
 		})
 
-		emitter.prependOnce('bar', (a, b) => {
+		emitter.onceFront('bar', (a, b) => {
 			calls.push(`first:${a * b}`)
 		})
 
 		emitter.emit('bar', 2, 3)
 
-		// prependOnce 先运行，然后普通 on
+		// onceFront 先运行，然后普通 on
 		expect(calls).toEqual(['first:6', 'on:5'])
-		expect(emitter.listenerCount('bar')).toBe(1)
+		expect(emitter.count('bar')).toBe(1)
 
 		// 再次 emit 只剩 on
 		emitter.emit('bar', 4, 1)
@@ -81,11 +81,11 @@ describe('事件一次性监听: once / prependOnce', () => {
 
 		expect(callsA).toEqual(['A:x'])
 		expect(callsB).toEqual(['B:x'])
-		expect(emitter.listenerCount('foo')).toBe(0)
+		expect(emitter.count('foo')).toBe(0)
 	})
 })
 
-describe('事件多次监听: many / prependMany', () => {
+describe('事件多次监听: many / manyFront', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
 		emitter = new Eventure()
@@ -103,7 +103,7 @@ describe('事件多次监听: many / prependMany', () => {
 		emitter.emit('foo', 'd') // 超出次数不应再触发
 
 		expect(calls).toEqual(['a', 'b', 'c'])
-		expect(emitter.listenerCount('foo')).toBe(0)
+		expect(emitter.count('foo')).toBe(0)
 	})
 
 	it('manual=true 时应返回取消订阅函数，取消后不再触发', () => {
@@ -124,27 +124,27 @@ describe('事件多次监听: many / prependMany', () => {
 		emitter.emit('foo', 'x')
 		emitter.emit('foo', 'y')
 		expect(calls).toEqual([])
-		expect(emitter.listenerCount('foo')).toBe(0)
+		expect(emitter.count('foo')).toBe(0)
 	})
 
-	it('.prependMany 应将监听器前置并保持调用顺序', () => {
+	it('.manyFront 应将监听器前置并保持调用顺序', () => {
 		const calls: string[] = []
 
 		emitter.on('bar', (a, b) => {
 			calls.push(`on:${a + b}`)
 		})
 
-		emitter.prependMany('bar', 2, (a, b) => {
+		emitter.manyFront('bar', 2, (a, b) => {
 			calls.push(`first:${a * b}`)
 		})
 
 		emitter.emit('bar', 2, 3)
 		expect(calls).toEqual(['first:6', 'on:5'])
-		expect(emitter.listenerCount('bar')).toBe(2)
+		expect(emitter.count('bar')).toBe(2)
 
 		emitter.emit('bar', 4, 1)
 		expect(calls).toEqual(['first:6', 'on:5', 'first:4', 'on:5'])
-		expect(emitter.listenerCount('bar')).toBe(1)
+		expect(emitter.count('bar')).toBe(1)
 
 		emitter.emit('bar', 1, 2)
 		expect(calls).toEqual(['first:6', 'on:5', 'first:4', 'on:5', 'on:3'])
@@ -163,7 +163,7 @@ describe('事件多次监听: many / prependMany', () => {
 
 		expect(callsA).toEqual(['A:1', 'A:2'])
 		expect(callsB).toEqual(['B:1', 'B:2', 'B:3'])
-		expect(emitter.listenerCount('foo')).toBe(0)
+		expect(emitter.count('foo')).toBe(0)
 	})
 
 	it('count 非正整数时应抛出异常', () => {
