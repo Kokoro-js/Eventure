@@ -8,7 +8,7 @@ interface Events {
 	bar: [number, number]
 }
 
-describe('事件一次性监听: once / prependOnce', () => {
+describe('事件一次性监听: once / onceFront', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
 		emitter = new Eventure()
@@ -47,20 +47,20 @@ describe('事件一次性监听: once / prependOnce', () => {
 		expect(emitter.count('foo')).toBe(0)
 	})
 
-	it('.prependOnce 应将监听器前置并保持调用顺序', () => {
+	it('.onceFront 应将监听器前置并保持调用顺序', () => {
 		const calls: string[] = []
 
 		emitter.on('bar', (a, b) => {
 			calls.push(`on:${a + b}`)
 		})
 
-		emitter.prependOnce('bar', (a, b) => {
+		emitter.onceFront('bar', (a, b) => {
 			calls.push(`first:${a * b}`)
 		})
 
 		emitter.emit('bar', 2, 3)
 
-		// prependOnce 先运行，然后普通 on
+		// onceFront 先运行，然后普通 on
 		expect(calls).toEqual(['first:6', 'on:5'])
 		expect(emitter.count('bar')).toBe(1)
 
@@ -85,7 +85,7 @@ describe('事件一次性监听: once / prependOnce', () => {
 	})
 })
 
-describe('事件多次监听: many / prependMany', () => {
+describe('事件多次监听: many / manyFront', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
 		emitter = new Eventure()
@@ -127,14 +127,14 @@ describe('事件多次监听: many / prependMany', () => {
 		expect(emitter.count('foo')).toBe(0)
 	})
 
-	it('.prependMany 应将监听器前置并保持调用顺序', () => {
+	it('.manyFront 应将监听器前置并保持调用顺序', () => {
 		const calls: string[] = []
 
 		emitter.on('bar', (a, b) => {
 			calls.push(`on:${a + b}`)
 		})
 
-		emitter.prependMany('bar', 2, (a, b) => {
+		emitter.manyFront('bar', 2, (a, b) => {
 			calls.push(`first:${a * b}`)
 		})
 

@@ -61,7 +61,7 @@ describe('Eventure.waitFor 方法', () => {
 		expect(emitter.count('data')).toBe(0)
 	})
 
-	it('调用 cancel 后无论是否满足条件都不应 resolve 或 reject', async () => {
+	it('调用 cancel 后无论是否满足条件都应 reject', async () => {
 		const p = emitter.waitFor('data', { timeout: 1000 })
 		// 立即取消
 		p.cancel()
@@ -71,7 +71,7 @@ describe('Eventure.waitFor 方法', () => {
 			p.then(() => 'resolved').catch(() => 'rejected'),
 			new Promise<'no-resolve'>((r) => setTimeout(() => r('no-resolve'), 50)),
 		])
-		expect(result).toBe('no-resolve')
+		expect(result).toBe('rejected')
 		expect(emitter.count('data')).toBe(0)
 	})
 

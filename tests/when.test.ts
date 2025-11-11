@@ -30,7 +30,7 @@ describe('Eventified.when', () => {
 		expect(calls).toEqual([4]) // 已自动退订，不再触发
 	})
 
-	it('when(...).prependOnce: respects prepend order and predicate', () => {
+	it('when(...).onceFront: respects prepend order and predicate', () => {
 		const calls: string[] = []
 
 		emitter.on('str', (s) => calls.push(`on:${s}`))
@@ -38,13 +38,13 @@ describe('Eventified.when', () => {
 		// 只在字符串长度大于 3 时，优先触发一次
 		emitter
 			.when('str', (s) => s.length > 3)
-			.prependOnce((s) => calls.push(`first:${s}`))
+			.onceFront((s) => calls.push(`first:${s}`))
 
 		emitter.emit('str', 'hi')
 		expect(calls).toEqual(['on:hi']) // predicate false
 
 		emitter.emit('str', 'hello')
-		// prependOnce 先执行，然后普通 listener
+		// onceFront 先执行，然后普通 listener
 		expect(calls).toEqual(['on:hi', 'first:hello', 'on:hello'])
 
 		calls.length = 0
@@ -72,13 +72,13 @@ describe('Eventified.when', () => {
 		expect(calls).toEqual([1, 2, 3]) // 不再触发
 	})
 
-	it('when(...).prependMany: respects prepend order and次数限制', () => {
+	it('when(...).manyFront: respects prepend order and次数限制', () => {
 		const calls: string[] = []
 
 		emitter.on('str', (s) => calls.push(`on:${s}`))
 
-		// 任意字符串，前两次 prependMany 优先触发
-		emitter.when('str').prependMany(2, (s) => calls.push(`first:${s}`))
+		// 任意字符串，前两次 manyFront 优先触发
+		emitter.when('str').manyFront(2, (s) => calls.push(`first:${s}`))
 
 		emitter.emit('str', 'a')
 		expect(calls).toEqual(['first:a', 'on:a'])
