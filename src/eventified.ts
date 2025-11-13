@@ -26,7 +26,6 @@ import {
 	type WFResult,
 } from './ext/waterfallShared'
 import { defaultLogger, type Logger } from './logger'
-import type { OnOptions } from './options'
 import type {
 	ErrorPolicy,
 	EventArgs,
@@ -35,6 +34,7 @@ import type {
 	EventListener,
 	EventResult,
 	IEventMap,
+	OnOptions,
 	Unsubscribe,
 } from './types'
 import {
@@ -46,10 +46,7 @@ import {
 	prependListenerCopy,
 } from './utils'
 
-/** 订阅句柄：函数即对象，兼容 using/RAII */
-type Subscription = Unsubscribe & { [Symbol.dispose]?: () => void }
-
-const noopSubscription: Subscription = (() => {}) as Subscription
+const noopSubscription: Unsubscribe = (() => {}) as Unsubscribe
 try {
 	;(noopSubscription as any)[Symbol.dispose] = noopSubscription
 } catch {
@@ -110,7 +107,7 @@ export class Eventure<
 	protected _checkSyncFuncReturnPromise: boolean
 	protected _errorPolicy: ErrorPolicy
 	/** 预构建包装器，热路径零分配 */
-	public _wrap: <T extends Function>(listener: T) => T
+	protected _wrap: <T extends Function>(listener: T) => T
 
 	constructor(options?: EventEmitterOptions<E>) {
 		this._logger = options?.logger ?? defaultLogger
@@ -132,18 +129,18 @@ export class Eventure<
 		})
 	}
 
-	private _onSyncError(err: unknown): void {
+	protected _onSyncError(err: unknown): void {
 		onSyncError(err, this._errorPolicy, this._logger)
 	}
 
 	/** 创建可退订句柄，并实现 [Symbol.dispose] 以支持 using */
-	private _makeSubscription<K extends keyof E>(
+	protected _makeSubscription<K extends keyof E>(
 		event: K,
 		orig: EventListener<E[K]>,
-	): Subscription {
-		const unsub: Subscription = (() => {
+	): Unsubscribe {
+		const unsub: Unsubscribe = (() => {
 			this.off(event, orig)
-		}) as Subscription
+		}) as Unsubscribe
 		// RAII/using：退出作用域自动退订
 		try {
 			;(unsub as any)[Symbol.dispose] = unsub
@@ -153,12 +150,12 @@ export class Eventure<
 		return unsub
 	}
 
-	private _register<K extends keyof E>(
+	protected _register<K extends keyof E>(
 		event: K,
 		listener: EventListener<E[K]>,
 		opts?: OnOptions,
 		forcePrepend?: boolean,
-	): Subscription {
+	): Unsubscribe {
 		const signal = opts?.signal
 		if (signal?.aborted) return noopSubscription
 
@@ -194,11 +191,11 @@ export class Eventure<
 		event: K,
 		listener: EventListener<E[K]>,
 		opts?: OnOptions,
-	): Subscription {
+	): Unsubscribe {
 		return this._register(event, listener, opts)
 	}
 
-	private _singleRegister<K extends keyof E>(event: K): RegisterSingle<E[K]> {
+	protected _singleRegister<K extends keyof E>(event: K): RegisterSingle<E[K]> {
 		return (listener, prepend) =>
 			this._register(event, listener, undefined, prepend ?? false)
 	}
@@ -208,7 +205,7 @@ export class Eventure<
 		event: K,
 		listener: EventListener<E[K]>,
 		opts?: Omit<OnOptions, 'prepend'>,
-	): Subscription {
+	): Unsubscribe {
 		return this._register(event, listener, opts, true)
 	}
 

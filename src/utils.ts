@@ -94,10 +94,7 @@ export function createWrapHelper(opts: WrapOptions) {
 }
 
 /** Listener array helpers to avoid spread/splice polymorphism on hot paths */
-export function appendListenerCopy<T>(
-	prev: T[] | undefined,
-	listener: T,
-): T[] {
+export function appendListenerCopy<T>(prev: T[] | undefined, listener: T): T[] {
 	if (!prev || prev.length === 0) return [listener]
 	const len = prev.length
 	const next = new Array<T>(len + 1)

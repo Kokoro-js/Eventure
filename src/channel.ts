@@ -23,7 +23,6 @@ import {
 	type WFResult,
 } from './ext/waterfallShared'
 import { defaultLogger, type Logger } from './logger'
-import type { OnOptions } from './options'
 import type {
 	ErrorPolicy,
 	EventArgs,
@@ -31,6 +30,7 @@ import type {
 	EventEmitterOptions,
 	EventListener,
 	EventResult,
+	OnOptions,
 	Unsubscribe,
 } from './types'
 import {
@@ -42,14 +42,12 @@ import {
 	prependListenerCopy,
 } from './utils'
 
-type Subscription = Unsubscribe & { [Symbol.dispose]?: () => void }
-
-type ChannelOptions<D extends EventDescriptor> = Omit<
+export type ChannelOptions<D extends EventDescriptor> = Omit<
 	EventEmitterOptions<Record<string, D>>,
 	'events'
 >
 
-const noopSubscription: Subscription = (() => {}) as Subscription
+const noopSubscription: Unsubscribe = (() => {}) as Unsubscribe
 try {
 	;(noopSubscription as any)[Symbol.dispose] = noopSubscription
 } catch {
@@ -69,12 +67,12 @@ export type ChannelWaitForOptions<D extends EventDescriptor> =
 export type ChannelWaitForPromise<D extends EventDescriptor> =
 	CancellablePromise<EventArgs<D>>
 
-type ChannelWhenReturn<D extends EventDescriptor> = WhenGuard<D>
+export type ChannelWhenReturn<D extends EventDescriptor> = WhenGuard<D>
 
 export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
-	private _listeners: EventListener<D>[] = []
+	protected _listeners: EventListener<D>[] = []
 
-	private _maxListeners = 10
+	protected _maxListeners = 10
 	get maxListeners(): number {
 		return this._maxListeners
 	}
@@ -82,14 +80,14 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		this._maxListeners = count
 	}
 
-	private _logger: Logger
-	private _catchPromiseError: boolean
-	private _checkSyncFuncReturnPromise: boolean
-	private _errorPolicy: ErrorPolicy
+	protected _logger: Logger
+	protected _catchPromiseError: boolean
+	protected _checkSyncFuncReturnPromise: boolean
+	protected _errorPolicy: ErrorPolicy
 
-	public _wrap: <T extends Function>(listener: T) => T
+	protected _wrap: <T extends Function>(listener: T) => T
 
-	private readonly _singleRegister: RegisterSingle<D>
+	protected readonly _singleRegister: RegisterSingle<D>
 
 	constructor(options?: ChannelOptions<D>) {
 		this._logger = options?.logger ?? defaultLogger
@@ -109,15 +107,15 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 			this._register(listener, undefined, prepend ?? false)
 	}
 
-	private _onSyncError(err: unknown): void {
+	protected _onSyncError(err: unknown): void {
 		onSyncError(err, this._errorPolicy, this._logger)
 	}
 
-	private _register(
+	protected _register(
 		listener: EventListener<D>,
 		opts?: OnOptions,
 		prepend?: boolean,
-	): Subscription {
+	): Unsubscribe {
 		if (opts?.signal?.aborted) return noopSubscription
 
 		const fn = this._wrap(listener)
@@ -145,10 +143,10 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return sub
 	}
 
-	private _makeSubscription(orig: EventListener<D>): Subscription {
-		const unsub: Subscription = (() => {
+	protected _makeSubscription(orig: EventListener<D>): Unsubscribe {
+		const unsub: Unsubscribe = (() => {
 			this.off(orig)
-		}) as Subscription
+		}) as Unsubscribe
 		try {
 			;(unsub as any)[Symbol.dispose] = unsub
 		} catch {
@@ -157,14 +155,14 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return unsub
 	}
 
-	public on(listener: EventListener<D>, opts?: OnOptions): Subscription {
+	public on(listener: EventListener<D>, opts?: OnOptions): Unsubscribe {
 		return this._register(listener, opts, false)
 	}
 
 	public onFront(
 		listener: EventListener<D>,
 		opts?: Omit<OnOptions, 'prepend'>,
-	): Subscription {
+	): Unsubscribe {
 		return this._register(listener, opts, true)
 	}
 

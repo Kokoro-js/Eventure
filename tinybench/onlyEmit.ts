@@ -15,8 +15,7 @@ const EVENT = 'ping'
 const PAYLOAD = { msg: 'hello' }
 const RUNS = 1e5
 const OUTPUT_PATH =
-	process.env.BENCH_RESULTS_PATH ??
-	'../benchmarks/onlyEmit.latest.json'
+	process.env.BENCH_RESULTS_PATH ?? '../benchmarks/onlyEmit.latest.json'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const resolvedOutputPath = resolve(__dirname, OUTPUT_PATH)
 
@@ -245,7 +244,10 @@ const report: BenchmarkReport = {
 		runsPerIteration: RUNS,
 		payloadBytes,
 	},
-	benches: [summarizeBench(benchSync, 'sync'), summarizeBench(benchAsync, 'async')],
+	benches: [
+		summarizeBench(benchSync, 'sync'),
+		summarizeBench(benchAsync, 'async'),
+	],
 }
 
 await mkdir(dirname(resolvedOutputPath), { recursive: true })

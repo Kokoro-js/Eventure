@@ -107,15 +107,19 @@ for (const mode of benchModes) {
 				? targetOps - baseOps
 				: undefined
 		const deltaPct =
-			baseOps && targetOps ? (deltaOps / baseOps) * 100 : undefined
+			baseOps && targetOps && deltaOps ? (deltaOps / baseOps) * 100 : undefined
 		const combinedRme =
 			(base?.throughput.rme ?? 0) + (target?.throughput.rme ?? 0)
 		const minThreshold = 5
 		const significanceThreshold = Math.max(combinedRme, minThreshold)
 		const significant =
 			deltaPct !== undefined && Math.abs(deltaPct) > significanceThreshold
-		const isRegression = Boolean(significant && deltaPct !== undefined && deltaPct < 0)
-		const isImprovement = Boolean(significant && deltaPct !== undefined && deltaPct > 0)
+		const isRegression = Boolean(
+			significant && deltaPct !== undefined && deltaPct < 0,
+		)
+		const isImprovement = Boolean(
+			significant && deltaPct !== undefined && deltaPct > 0,
+		)
 
 		diffs.push({
 			benchMode: mode,
@@ -136,9 +140,7 @@ const renderOps = (value: number | undefined) =>
 	value === undefined ? '—' : value.toFixed(2)
 
 const renderPercent = (value: number | undefined) =>
-	value === undefined
-		? '—'
-		: `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+	value === undefined ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
 
 const renderSamples = (base?: number, target?: number) => {
 	if (base === undefined && target === undefined) return '—'
@@ -161,9 +163,7 @@ if (regressions.length) {
 	const items = regressions
 		.map(
 			(row) =>
-				`**${row.task} (${row.benchMode})** ${renderPercent(
-					row.deltaPct,
-				)}`,
+				`**${row.task} (${row.benchMode})** ${renderPercent(row.deltaPct)}`,
 		)
 		.join(', ')
 	summaryLines.push(`- ⚠️ Significant regressions: ${items}`)
@@ -175,9 +175,7 @@ if (improvements.length) {
 	const items = improvements
 		.map(
 			(row) =>
-				`**${row.task} (${row.benchMode})** ${renderPercent(
-					row.deltaPct,
-				)}`,
+				`**${row.task} (${row.benchMode})** ${renderPercent(row.deltaPct)}`,
 		)
 		.join(', ')
 	summaryLines.push(`- 🚀 Notable improvements: ${items}`)

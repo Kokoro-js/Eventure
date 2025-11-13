@@ -26,7 +26,18 @@ export type EventListener<D extends EventDescriptor> = (
 	...args: EventArgs<D>
 ) => EventResult<D>
 
-export type Unsubscribe = () => void
+export type UnsubscribeFunction = () => void
+export type Unsubscribe = UnsubscribeFunction & {
+	[Symbol.dispose]?: () => void
+}
+
+/** —— 注册参数 —— */
+export interface OnOptions {
+	/** 是否前插（默认尾插） */
+	prepend?: boolean
+	/** 绑定 AbortSignal，触发后自动退订 */
+	signal?: AbortSignal
+}
 
 /** —— 运行时错误策略 —— */
 export type ErrorPolicy = 'silent' | 'log' | 'throw'

@@ -68,18 +68,14 @@ export function waitForSingle<D extends EventDescriptor>(
 			if (signal.aborted) {
 				cleanup()
 				reject(
-					new Error(
-						label ? `waitFor '${label}' aborted` : 'waitFor aborted',
-					),
+					new Error(label ? `waitFor '${label}' aborted` : 'waitFor aborted'),
 				)
 				return
 			}
 			abortListener = () => {
 				cleanup()
 				reject(
-					new Error(
-						label ? `waitFor '${label}' aborted` : 'waitFor aborted',
-					),
+					new Error(label ? `waitFor '${label}' aborted` : 'waitFor aborted'),
 				)
 			}
 			signal.addEventListener('abort', abortListener, { once: true })

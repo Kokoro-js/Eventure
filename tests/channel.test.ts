@@ -55,12 +55,7 @@ describe('EvtChannel core', () => {
 		channel.emit('OK-2')
 
 		await expect(waiting).resolves.toEqual(['OK-1'])
-		expect(seen).toEqual([
-			'once:OK-1',
-			'many:OK-1',
-			'guard:OK-1',
-			'many:skip',
-		])
+		expect(seen).toEqual(['once:OK-1', 'many:OK-1', 'guard:OK-1', 'many:skip'])
 		expect(channel.count()).toBe(0)
 	})
 })
@@ -101,7 +96,10 @@ describe('EvtChannel fire & waterfall helpers', () => {
 	})
 
 	it('executes waterfall pipelines and reports interruption', () => {
-		type PipelineEvent = (value: number, next: (value: number) => number) => number
+		type PipelineEvent = (
+			value: number,
+			next: (value: number) => number,
+		) => number
 		const pipeline = new EvtChannel<PipelineEvent>()
 
 		pipeline.on((value, next) => next(value + 1))
@@ -115,7 +113,11 @@ describe('EvtChannel fire & waterfall helpers', () => {
 		expect(interrupted).toEqual({ ok: false, value: -2 })
 
 		const snapshot = pipeline.listeners().slice(0, 2)
-		const withInner = pipeline.waterfall(snapshot, 1, (final: number) => final * 10)
+		const withInner = pipeline.waterfall(
+			snapshot,
+			1,
+			(final: number) => final * 10,
+		)
 		expect(withInner).toEqual({ ok: true, value: 40 })
 	})
 })
