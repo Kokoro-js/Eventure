@@ -95,11 +95,9 @@ describe('Eventified 核心功能', () => {
 			error: () => {},
 			fatal: () => {},
 		}
-		const local = new Eventure<
-			{
-				syncEvt: [number, string]
-			}
-		>({
+		const local = new Eventure<{
+			syncEvt: [number, string]
+		}>({
 			logger,
 		})
 		local.maxListeners = 1
