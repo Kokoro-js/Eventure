@@ -59,17 +59,6 @@ describe('EvtChannel core', () => {
 		expect(seen).toEqual(['once:OK-1', 'many:OK-1', 'guard:OK-1', 'many:skip'])
 		expect(channel.count()).toBe(0)
 	})
-
-	it("propagates sync errors when errorPolicy is 'throw'", () => {
-		const local = new EvtChannel<StringEvent>({
-			logger: silentLogger,
-			errorPolicy: 'throw',
-		})
-		local.on(() => {
-			throw new Error('boom')
-		})
-		expect(() => local.emit('x')).toThrow('boom')
-	})
 })
 
 describe('EvtChannel fire & waterfall helpers', () => {

@@ -215,45 +215,6 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		const fns = this._listeners
 		if (fns.length === 0) return 0
 		const len = fns.length
-
-		if (this._errorPolicy === 'throw') {
-			switch (args.length) {
-				case 0:
-					for (let i = 0; i < len; i++) (fns[i] as any)()
-					break
-				case 1: {
-					const arg0 = args[0]!
-					for (let i = 0; i < len; i++) (fns[i] as any)(arg0)
-					break
-				}
-				case 2: {
-					const arg0 = args[0]!
-					const arg1 = args[1]!
-					for (let i = 0; i < len; i++) (fns[i] as any)(arg0, arg1)
-					break
-				}
-				case 3: {
-					const arg0 = args[0]!
-					const arg1 = args[1]!
-					const arg2 = args[2]!
-					for (let i = 0; i < len; i++) (fns[i] as any)(arg0, arg1, arg2)
-					break
-				}
-				case 4: {
-					const arg0 = args[0]!
-					const arg1 = args[1]!
-					const arg2 = args[2]!
-					const arg3 = args[3]!
-					for (let i = 0; i < len; i++)
-						(fns[i] as any)(arg0, arg1, arg2, arg3)
-					break
-				}
-				default:
-					for (let i = 0; i < len; i++) (fns[i] as any)(...args)
-			}
-			return len
-		}
-
 		switch (args.length) {
 			case 0:
 				for (let i = 0; i < len; i++) {

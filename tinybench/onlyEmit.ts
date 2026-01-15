@@ -16,6 +16,8 @@ const PAYLOAD = { msg: 'hello' }
 const RUNS = 1e5
 const OUTPUT_PATH =
 	process.env.BENCH_RESULTS_PATH ?? '../benchmarks/onlyEmit.latest.json'
+const TIME_SYNC_MS = Number(process.env.BENCH_TIME_SYNC_MS ?? 1000)
+const TIME_ASYNC_MS = Number(process.env.BENCH_TIME_ASYNC_MS ?? 2000)
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const resolvedOutputPath = resolve(__dirname, OUTPUT_PATH)
 
@@ -84,7 +86,7 @@ const implementations = [
 // —— Pure Sync Benchmark ——
 const benchSync = new Bench({
 	name: `${title} — sync`,
-	time: 100,
+	time: TIME_SYNC_MS,
 	iterations: 10,
 	now: hrtimeNow,
 })
@@ -127,7 +129,7 @@ console.table(benchSync.table())
 // —— End-to-End Async Benchmark ——
 const benchAsync = new Bench({
 	name: `${title} — async`,
-	time: 2000,
+	time: TIME_ASYNC_MS,
 	iterations: 10,
 	now: hrtimeNow,
 })
@@ -135,31 +137,49 @@ const benchAsync = new Bench({
 implementations.forEach(({ label, create }) => {
 	let emitter: any
 	let cnt = 0
-	let promises: Promise<any>[] = []
+	let pending = 0
+	let done: Promise<void> | null = null
+	let resolveDone: (() => void) | null = null
 
-	benchAsync.add(
-		label.replace('pure sync', 'async end-to-end'),
-		async () => {
-			for (let i = 0; i < RUNS; i++) {
+		benchAsync.add(
+			label.replace('pure sync', 'async end-to-end'),
+			async () => {
+				for (let i = 0; i < RUNS; i++) {
 				emitter.emit(EVENT, PAYLOAD)
 			}
-			await Promise.all(promises)
-		},
-		{
-			beforeAll() {
-				emitter = create()
-				// 每次 emit 都往 promises 收集返回的 Promise
-				emitter.on(EVENT, (data: any) => {
-					const p = Promise.resolve().then(() => {
-						cnt += data.msg.length
-					})
-					promises.push(p)
-					return p
-				})
+			const currentDone = done
+			if (currentDone) await currentDone
 			},
-			beforeEach() {
-				cnt = 0
-				promises = []
+			{
+				beforeAll() {
+					emitter = create()
+					// 每次 emit 都触发一次微任务，且 listener 返回 Promise（模拟 end-to-end async）
+					const onAsync = (data: any) => {
+						pending++
+						if (!done) {
+							done = new Promise<void>((resolve) => {
+								resolveDone = resolve
+							})
+						}
+						return Promise.resolve().then(() => {
+							cnt += data.msg.length
+							if (--pending === 0) {
+								const resolve = resolveDone
+								resolveDone = null
+								const localDone = done
+								done = null
+								if (localDone) resolve?.()
+							}
+						})
+					}
+					emitter.on(EVENT, onAsync)
+					emitter.on(EVENT, onAsync)
+				},
+				beforeEach() {
+					cnt = 0
+					pending = 0
+					done = null
+				resolveDone = null
 			},
 		},
 	)

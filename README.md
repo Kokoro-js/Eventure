@@ -32,6 +32,7 @@ pnpm i eventure
 Eventure vs [EventEmitter3](https://github.com/primus/eventemitter3) vs [EventEmitter2](https://github.com/EventEmitter2/EventEmitter2) vs [mitt](https://github.com/developit/mitt) (每次测轮跑 ×10⁵ 次)
 <br>该测试可复现，请查看 [tinybench](./tinybench/)，考虑到小于 5% 的误差在实际应用中完全可以忽略，
 我们并不想夸大性能优势，Eventure 的目的是保证功能正确的同时保持第一梯队的性能，EE3 缺乏功能，EE2 混乱且难维护，这便是 Eventure 存在的意义。
+<br>关于性能主要来源（例如：不可变快照语义避免每次 emit 的 `slice()`、降低 GC 压力的策略等），见 [PERFORMANCE.md](./PERFORMANCE.md)。
 
 | #   | Task name                         | Throughput avg (×10⁵ ops/s) | Throughput med (×10⁵ ops/s) | Latency avg (ns)     | Latency med (ns)     | Samples |
 | --- | -------------------------         | --------------------------- | --------------------------- | -------------------  | -------------------  | ------- |
