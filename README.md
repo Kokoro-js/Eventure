@@ -32,6 +32,7 @@ pnpm i eventure
 Eventure vs [EventEmitter3](https://github.com/primus/eventemitter3) vs [EventEmitter2](https://github.com/EventEmitter2/EventEmitter2) vs [mitt](https://github.com/developit/mitt) (每次测轮跑 ×10⁵ 次)
 <br>该测试可复现，请查看 [tinybench](./tinybench/)，考虑到小于 5% 的误差在实际应用中完全可以忽略，
 我们并不想夸大性能优势，Eventure 的目的是保证功能正确的同时保持第一梯队的性能，EE3 缺乏功能，EE2 混乱且难维护，这便是 Eventure 存在的意义。
+<br>关于性能主要来源（例如：不可变快照语义避免每次 emit 的 `slice()`、降低 GC 压力的策略等），见 [PERFORMANCE.md](./PERFORMANCE.md)。
 
 | #   | Task name                         | Throughput avg (×10⁵ ops/s) | Throughput med (×10⁵ ops/s) | Latency avg (ns)     | Latency med (ns)     | Samples |
 | --- | -------------------------         | --------------------------- | --------------------------- | -------------------  | -------------------  | ------- |
@@ -69,6 +70,13 @@ emitter.emit("foo", "你好，世界")
 ```
 
 更多用法请查看： [tests/](./tests/)
+
+### 🔧 进阶
+
+- `onAt(event, { at, signal? }, listener)`：按指定位置插入监听器（`at` 可为 number 或 `(ctx) => number`）
+- `emitAll(event, ...args)`：并发执行所有监听器，任一抛错/拒绝/返回 `Error` 会 reject（行为类似 `Promise.all`）
+- `emitSettled(event, ...args)`：返回 `{ fn, status, value|reason }[]`，永不 throw（行为类似 `Promise.allSettled`）
+- `listenersUnsafe(event)`：返回内部监听器数组引用（零拷贝，**不要 mutate**；仅用于高级/性能场景）
 
 ## 🤝 贡献指南
 

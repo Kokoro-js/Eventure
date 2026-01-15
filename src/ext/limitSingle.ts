@@ -5,12 +5,13 @@ import type {
 	Unsubscribe,
 } from '@/types'
 
+// biome-ignore lint/suspicious/noConfusingVoidType: void is intentional for ergonomics (predicates can omit an explicit return)
 export type GuardResult = boolean | undefined | void
 export type GuardPredicate<D extends EventDescriptor> = (
 	...args: EventArgs<D>
 ) => GuardResult
 
-export type WrapFn = <T extends Function>(listener: T) => T
+export type WrapFn = <T extends (...args: any[]) => any>(listener: T) => T
 export type RegisterSingle<D extends EventDescriptor> = (
 	listener: EventListener<D>,
 	prepend?: boolean,

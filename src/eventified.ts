@@ -33,6 +33,7 @@ import type {
 	EventEmitterOptions,
 	EventListener,
 	EventResult,
+	EmitSettledRecord,
 	IEventMap,
 	OnOptions,
 	Unsubscribe,
@@ -41,17 +42,16 @@ import {
 	appendListenerCopy,
 	copyWithoutIndex,
 	createWrapHelper,
+	insertListenerCopy,
 	ORIGFUNC,
+	isPromiseLike,
+	noopSubscription,
 	onSyncError,
 	prependListenerCopy,
+	resolveInsertIndex,
+	withAbortSignal,
+	attachDispose,
 } from './utils'
-
-const noopSubscription: Unsubscribe = (() => {}) as Unsubscribe
-try {
-	;(noopSubscription as any)[Symbol.dispose] = noopSubscription
-} catch {
-	/* older runtimes may lack Symbol.dispose */
-}
 
 export type EventureFireSyncResult<
 	E extends IEventMap<E>,
@@ -107,7 +107,7 @@ export class Eventure<
 	protected _checkSyncFuncReturnPromise: boolean
 	protected _errorPolicy: ErrorPolicy
 	/** 预构建包装器，热路径零分配 */
-	protected _wrap: <T extends Function>(listener: T) => T
+	protected _wrap: <T extends (...args: any[]) => any>(listener: T) => T
 
 	constructor(options?: EventEmitterOptions<E>) {
 		this._logger = options?.logger ?? defaultLogger
@@ -142,12 +142,7 @@ export class Eventure<
 			this.off(event, orig)
 		}) as Unsubscribe
 		// RAII/using：退出作用域自动退订
-		try {
-			;(unsub as any)[Symbol.dispose] = unsub
-		} catch {
-			/* 旧环境可忽略 */
-		}
-		return unsub
+		return attachDispose(unsub)
 	}
 
 	protected _register<K extends keyof E>(
@@ -176,14 +171,7 @@ export class Eventure<
 
 		const sub = this._makeSubscription(event, listener)
 
-		if (signal) {
-			const abortUnsub = () => {
-				sub()
-				signal.removeEventListener('abort', abortUnsub)
-			}
-			signal.addEventListener('abort', abortUnsub, { once: true })
-		}
-		return sub
+		return withAbortSignal(signal, sub)
 	}
 
 	/** 统一注册：返回 Subscription（函数），避免重载与布尔位 */
@@ -206,7 +194,41 @@ export class Eventure<
 		listener: EventListener<E[K]>,
 		opts?: Omit<OnOptions, 'prepend'>,
 	): Unsubscribe {
-		return this._register(event, listener, opts, true)
+		return this.onAt(event, { at: 0, signal: opts?.signal }, listener)
+	}
+
+	public onAt<K extends keyof E>(
+		event: K,
+		options: {
+			at: number | ((ctx: { count: number; event: K }) => number)
+			signal?: AbortSignal
+		},
+		listener: EventListener<E[K]>,
+	): Unsubscribe {
+		const signal = options.signal
+		if (signal?.aborted) return noopSubscription
+
+		const fn = this._wrap(listener) as EventListener<E[K]>
+		const prev = this._listeners[event]
+		const count = prev?.length ?? 0
+		const at = options.at
+		const index =
+			typeof at === 'function'
+				? resolveInsertIndex(count, at, { count, event })
+				: resolveInsertIndex(count, at)
+
+		const next = insertListenerCopy(prev, index, fn)
+		this._listeners[event] = next
+
+		if (next.length > 0) this._activeEvents.add(event)
+		if (next.length > this._maxListeners) {
+			this._logger.warn(
+				`MaxListenersExceededWarning(remind memory leak): '${String(event)}' has ${next.length} listeners that exceed ${this._maxListeners}`,
+			)
+		}
+
+		const sub = this._makeSubscription(event, listener)
+		return withAbortSignal(signal, sub)
 	}
 
 	/** 移除单个监听器；返回是否真的移除了一个条目 */
@@ -326,17 +348,95 @@ export class Eventure<
 		return len
 	}
 
-	/** 并发收集结果（错误策略沿用 wrap；throw 策略将透传） */
-	public async emitCollect<K extends keyof E>(
+	public async emitAll<K extends keyof E>(
 		event: K,
 		...args: EventArgs<E[K]>
-	): Promise<EventResult<E[K]>[]> {
+	): Promise<Awaited<EventResult<E[K]>>[]> {
 		const fns = this._listeners[event]
-		if (!fns || fns.length === 0) return [] as EventResult<E[K]>[]
-		const calls = new Array(fns.length)
-		for (let i = 0; i < fns.length; i++) calls[i] = (fns[i] as any)(...args)
-		const results = await Promise.all(calls)
-		return results as EventResult<E[K]>[]
+		if (!fns || fns.length === 0) return []
+
+		const len = fns.length
+		const results = new Array<Awaited<EventResult<E[K]>>>(len)
+		let pending: Promise<void>[] | null = null
+
+		for (let i = 0; i < len; i++) {
+			const fn = fns[i] as any
+			try {
+				const r = fn(...args)
+				if (r instanceof Error) {
+					if (pending) void Promise.allSettled(pending)
+					return Promise.reject(r)
+				}
+				if (isPromiseLike(r)) {
+					pending ??= []
+					pending.push(
+						Promise.resolve(r).then((v: any) => {
+							if (v instanceof Error) throw v
+							results[i] = v
+						}),
+					)
+					continue
+				}
+				results[i] = r
+			} catch (err) {
+				if (pending) void Promise.allSettled(pending)
+				return Promise.reject(err)
+			}
+		}
+
+		if (pending) await Promise.all(pending)
+		return results
+	}
+
+	public async emitSettled<K extends keyof E>(
+		event: K,
+		...args: EventArgs<E[K]>
+	): Promise<
+		EmitSettledRecord<EventListener<E[K]>, Awaited<EventResult<E[K]>>>[]
+	> {
+		const fns = this._listeners[event]
+		if (!fns || fns.length === 0) return []
+
+		const len = fns.length
+		const results = new Array<
+			EmitSettledRecord<EventListener<E[K]>, Awaited<EventResult<E[K]>>>
+		>(len)
+		let pending: Promise<void>[] | null = null
+
+		for (let i = 0; i < len; i++) {
+			const fn = fns[i]!
+			try {
+				const r = (fn as any)(...args)
+				if (r instanceof Error) {
+					results[i] = { fn, status: 'rejected', reason: r }
+					continue
+				}
+				if (isPromiseLike(r)) {
+					pending ??= []
+					pending.push(
+						Promise.resolve(r).then(
+							(v: any) => {
+								if (v instanceof Error) {
+									results[i] = { fn, status: 'rejected', reason: v }
+								} else {
+									results[i] = { fn, status: 'fulfilled', value: v }
+								}
+							},
+							(reason: unknown) => {
+								results[i] = { fn, status: 'rejected', reason }
+							},
+						),
+					)
+					continue
+				}
+				results[i] = { fn, status: 'fulfilled', value: r }
+			} catch (reason) {
+				results[i] = { fn, status: 'rejected', reason }
+			}
+		}
+
+		if (pending) await Promise.all(pending)
+		return results
 	}
 
 	/** 观测/诊断工具：保持只读快照 */
@@ -349,8 +449,15 @@ export class Eventure<
 	public listeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
 		return this._listeners[event]?.slice() ?? []
 	}
-	public queryListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
+	/**
+	 * 直接暴露内部监听器数组（零拷贝）。
+	 * 仅用于高级/性能场景；对返回数组做任何 mutate 都可能破坏库的快照语义。
+	 */
+	public listenersUnsafe<K extends keyof E>(event: K): EventListener<E[K]>[] {
 		return this._listeners[event] ?? []
+	}
+	public queryListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
+		return this.listenersUnsafe(event)
 	}
 
 	/** 基础 limit 实现：面向自定义组合 */
@@ -423,7 +530,7 @@ export class Eventure<
 		options: EventureWaitForOptions<E, K> = {},
 	): EventureWaitForPromise<E, K> {
 		const register = this._singleRegister(event)
-		return waitForSingle(this._wrap, register, { ...options }, String(event))
+		return waitForSingle(this._wrap, register, options, String(event))
 	}
 
 	public fire<K extends keyof E>(
@@ -434,14 +541,14 @@ export class Eventure<
 		listeners: EventListener<E[K]>[],
 		...args: EventArgs<E[K]>
 	): Generator<EventureFireSyncResult<E, K>>
-	public fire(
-		eventOrListeners: any,
-		...args: any[]
-	): Generator<FireSyncRecord<any>> {
-		if (Array.isArray(eventOrListeners)) {
-			return fireFromListeners(eventOrListeners, args)
-		}
-		return fireFromListeners(this.queryListeners(eventOrListeners), args)
+	public fire<K extends keyof E>(
+		eventOrListeners: K | EventListener<E[K]>[],
+		...args: EventArgs<E[K]>
+	): Generator<FireSyncRecord<E[K]>> {
+		const listeners = Array.isArray(eventOrListeners)
+			? eventOrListeners
+			: this.listenersUnsafe(eventOrListeners)
+		return fireFromListeners(listeners, args)
 	}
 
 	public fireAsync<K extends keyof E>(
@@ -452,14 +559,14 @@ export class Eventure<
 		listeners: EventListener<E[K]>[],
 		...args: EventArgs<E[K]>
 	): AsyncGenerator<EventureFireAsyncResult<E, K>>
-	public fireAsync(
-		eventOrListeners: any,
-		...args: any[]
-	): AsyncGenerator<FireAsyncRecord<any>> {
-		if (Array.isArray(eventOrListeners)) {
-			return fireAsyncFromListeners(eventOrListeners, args)
-		}
-		return fireAsyncFromListeners(this.queryListeners(eventOrListeners), args)
+	public fireAsync<K extends keyof E>(
+		eventOrListeners: K | EventListener<E[K]>[],
+		...args: EventArgs<E[K]>
+	): AsyncGenerator<FireAsyncRecord<E[K]>> {
+		const listeners = Array.isArray(eventOrListeners)
+			? eventOrListeners
+			: this.listenersUnsafe(eventOrListeners)
+		return fireAsyncFromListeners(listeners, args)
 	}
 
 	public waterfall<K extends WFKeys<E>>(
@@ -489,7 +596,7 @@ export class Eventure<
 	public waterfall(eventOrListeners: any, ...args: any[]): WFResult<any> {
 		const callbacks: EventListener<any>[] = Array.isArray(eventOrListeners)
 			? eventOrListeners
-			: this.queryListeners(eventOrListeners)
-		return runWaterfall(callbacks, args.slice())
+			: this.listenersUnsafe(eventOrListeners)
+		return runWaterfall(callbacks, args)
 	}
 }

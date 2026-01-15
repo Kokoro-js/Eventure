@@ -98,6 +98,9 @@ web_modules/
 
 .yarn-integrity
 
+# Lockfiles (library repo; use bun.lockb instead)
+pnpm-lock.yaml
+
 # dotenv environment variable files
 
 .env

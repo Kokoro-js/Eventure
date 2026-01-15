@@ -1,7 +1,14 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.2.2/schema.json",
-	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-	"files": { "ignoreUnknown": false, "includes": ["**"] },
+	"$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"ignoreUnknown": false,
+		"includes": ["**"]
+	},
 	"formatter": {
 		"enabled": true,
 		"useEditorconfig": true,
@@ -14,7 +21,13 @@
 		"bracketSpacing": true,
 		"includes": ["**", "!**/lib", "!**/.tap", "!**/*.md"]
 	},
-	"assist": { "actions": { "source": { "organizeImports": "on" } } },
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
 	"linter": {
 		"enabled": true,
 		"includes": ["**", "!**/*.test.ts", "!**/tinybench/**/*"],
@@ -100,12 +113,16 @@
 		}
 	},
 	"overrides": [
-		{ "includes": ["**/*.mjs"] },
+		{
+			"includes": ["**/*.mjs"]
+		},
 		{
 			"includes": ["**/*.ts", "**/*.tsx"],
 			"linter": {
 				"rules": {
-					"correctness": { "noUnusedVariables": "info" },
+					"correctness": {
+						"noUnusedVariables": "info"
+					},
 					"suspicious": {
 						"noExplicitAny": "info",
 						"noUnsafeDeclarationMerging": "info",
@@ -115,7 +132,9 @@
 						"noDefaultExport": "error",
 						"useConsistentArrayType": {
 							"level": "error",
-							"options": { "syntax": "shorthand" }
+							"options": {
+								"syntax": "shorthand"
+							}
 						}
 					}
 				}

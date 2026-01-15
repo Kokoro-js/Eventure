@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { EvtChannel } from '../src'
+import { EvtChannel } from 'eventure'
+import { silentLogger } from './testUtils'
 
-type StringEvent = [string]
+type StringEvent = (value: string) => string | Promise<string> | void
 
 describe('EvtChannel core', () => {
 	let channel: EvtChannel<StringEvent>
 
 	beforeEach(() => {
-		channel = new EvtChannel()
+		channel = new EvtChannel({ logger: silentLogger })
 	})
 
 	it('registers listeners, supports abort signals and clearing', () => {
@@ -81,8 +82,12 @@ describe('EvtChannel fire & waterfall helpers', () => {
 			type: 'success',
 			result: 'HI',
 		})
-		expect(subsetRecords[1]?.type).toBe('async')
-		await expect((subsetRecords[1] as any).promise).resolves.toBe('hihi')
+		const second = subsetRecords[1]
+		expect(second?.type).toBe('async')
+		if (!second || second.type !== 'async') {
+			throw new Error('Expected async record')
+		}
+		await expect(second.promise).resolves.toBe('hihi')
 
 		const gen = chan.fire(chan.listeners(), 'ok')
 		expect(Array.from(gen)).toHaveLength(3)
