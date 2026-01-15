@@ -1,19 +1,19 @@
 // tests/fire.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure, IS_ASYNC, ORIGFUNC } from '../src'
+import { Eventure, IS_ASYNC, ORIGFUNC } from 'eventure'
 import { silentLogger } from './testUtils'
 
 export interface Events {
 	ev: [string]
 }
 
-describe('Eventified.fire (同步 generator)', () => {
+describe('Eventure.fire (sync generator)', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
 		emitter = new Eventure({ logger: silentLogger })
 	})
 
-	it('应当依次对同步 listener 产出 success 或 error', () => {
+	it('yields success/error records for sync listeners', () => {
 		const okFn = (s: string) => s + '!'
 		const errFn = (s: string) => {
 			throw new Error('fail')
@@ -36,20 +36,22 @@ describe('Eventified.fire (同步 generator)', () => {
 		expect(results[0]?.fn).toBe(okFn)
 
 		// 第二个 listener 抛错
-		expect(results[1]?.type).toBe('error')
-		expect(results[1]?.fn).toBe(errFn)
-		// @ts-ignore
-		expect(results[1].error).toBeInstanceOf(Error)
-		// @ts-ignore
-		expect((results[1].error as Error).message).toBe('fail')
+		const second = results[1]
+		expect(second?.type).toBe('error')
+		if (!second || second.type !== 'error')
+			throw new Error('Expected error record')
+		expect(second.fn).toBe(errFn)
+		expect(second.error).toBeInstanceOf(Error)
+		expect((second.error as Error).message).toBe('fail')
 	})
 
-	it("对 async listener 会产出 type='async' 且带上 promise", async () => {
+	it('yields async records for native async listeners', async () => {
 		const asyncFn = async (s: string) => s.toUpperCase()
 		emitter.on('ev', asyncFn)
 
 		const gen = emitter.fire('ev', 'ok')
 		const rec = gen.next().value
+		if (!rec) throw new Error('Expected a record')
 
 		expect(rec.type).toBe('async')
 		// wrapper 上绑定的 ORIGFUNC 正好是原始 asyncFn
@@ -58,7 +60,7 @@ describe('Eventified.fire (同步 generator)', () => {
 		await expect(rec.promise).resolves.toBe('OK')
 	})
 
-	it('async listener 内抛错会被 catch 并以 resolve(Error) 形式返回', async () => {
+	it('exposes async throw as a resolved Error value (sync generator)', async () => {
 		const boomFn = async (s: string) => {
 			throw new Error('boom')
 		}
@@ -66,6 +68,7 @@ describe('Eventified.fire (同步 generator)', () => {
 
 		const gen = emitter.fire('ev', 'x')
 		const rec = gen.next().value
+		if (!rec) throw new Error('Expected a record')
 
 		expect(rec.type).toBe('async')
 		const v = await rec.promise
@@ -73,16 +76,17 @@ describe('Eventified.fire (同步 generator)', () => {
 		expect((v as Error).message).toBe('boom')
 	})
 
-	it('返回 Promise 但非 async 的 listener 也会被识别为 async', async () => {
+	it('treats promise-returning listeners as async records', async () => {
 		const promiseFn = (s: string) => Promise.resolve().then(() => `${s}!`)
 		emitter.on('ev', promiseFn)
 
 		const rec = emitter.fire('ev', 'yo').next().value
+		if (!rec) throw new Error('Expected a record')
 		expect(rec.type).toBe('async')
 		await expect(rec.promise).resolves.toBe('yo!')
 	})
 
-	it('Promise listener 的 rejection 以 async record 暴露', async () => {
+	it('exposes promise rejection via the async record promise', async () => {
 		const promiseFn = (s: string) =>
 			Promise.resolve().then(() => {
 				throw new Error(`bad:${s}`)
@@ -90,18 +94,19 @@ describe('Eventified.fire (同步 generator)', () => {
 		emitter.on('ev', promiseFn)
 
 		const rec = emitter.fire('ev', 'err').next().value
+		if (!rec) throw new Error('Expected a record')
 		expect(rec.type).toBe('async')
 		await expect(rec.promise).rejects.toThrow('bad:err')
 	})
 })
 
-describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
+describe('Eventure.fireAsync (AsyncGenerator)', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
 		emitter = new Eventure({ logger: silentLogger })
 	})
 
-	it('应当依次对所有 listener await 并产出 success 或 error', async () => {
+	it('awaits each listener and yields success/error records', async () => {
 		const syncFn = (s: string) => s + '?'
 		const throwFn = (s: string) => {
 			throw new Error('oops')
@@ -146,7 +151,7 @@ describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
 		expect((results[3].error as Error).message).toBe('bad result')
 	})
 
-	it('可在外部通过 break/return 提前终止，不再调用后续 listener', async () => {
+	it('supports early termination (return/break) without invoking later listeners', async () => {
 		let count = 0
 		emitter.on('ev', () => {
 			count++
@@ -168,12 +173,11 @@ describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
 		expect(second.value.type).toBe('error')
 
 		// 提前终止
-		// @ts-ignore
-		await iter.return?.()
+		await iter.return?.(undefined)
 		expect(count).toBe(2)
 	})
 
-	it('promise-returning listener rejection 会在 fireAsync 中产出 error 记录', async () => {
+	it('turns promise rejection into an error record', async () => {
 		const promiseFn = (_s: string) =>
 			Promise.resolve().then(() => {
 				throw new Error('reject:' + _s)

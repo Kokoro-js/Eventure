@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { EvtChannel, Eventure, type OnOptions } from '../src'
+import { Eventure, EvtChannel, type OnOptions } from 'eventure'
 import { silentLogger } from './testUtils'
 
 type StringEventMap = { ev: [string] }

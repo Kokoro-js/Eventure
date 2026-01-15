@@ -1,163 +1,103 @@
-// tests/onceMany.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure } from '../src'
+import { Eventure } from 'eventure'
+import { silentLogger } from './testUtils'
 
-interface Events {
+type Events = {
 	foo: [string]
 	bar: [number, number]
 }
 
-describe('事件一次性监听: once / onceFront', () => {
+describe('Eventure once/many', () => {
 	let emitter: Eventure<Events>
+
 	beforeEach(() => {
-		emitter = new Eventure()
+		emitter = new Eventure({ logger: silentLogger })
 	})
 
-	it('默认 .once 应只触发一次监听', () => {
-		const calls: string[] = []
+	describe('once / onceFront', () => {
+		it.each([
+			{
+				name: 'once',
+				register: (fn: (m: string) => void) => emitter.once('foo', fn),
+			},
+			{
+				name: 'onceFront',
+				register: (fn: (m: string) => void) => emitter.onceFront('foo', fn),
+			},
+		] as const)('$name only fires once', ({ register }) => {
+			const calls: string[] = []
+			register((m) => calls.push(m))
 
-		emitter.once('foo', (msg) => {
-			calls.push(msg)
+			emitter.emit('foo', 'first')
+			emitter.emit('foo', 'second')
+
+			expect(calls).toEqual(['first'])
+			expect(emitter.count('foo')).toBe(0)
 		})
 
-		emitter.emit('foo', 'first')
-		emitter.emit('foo', 'second')
+		it('returns an unsubscribe function (manual unsubscribe wins)', () => {
+			const calls: string[] = []
+			const unsub = emitter.once('foo', (m) => calls.push(m))
+			unsub()
 
-		expect(calls).toEqual(['first'])
-		expect(emitter.count('foo')).toBe(0)
-	})
-
-	it('返回的取消订阅函数生效，主动取消后不再触发', () => {
-		const calls: string[] = []
-
-		const unsub = emitter.once('foo', (msg) => {
-			calls.push(msg)
+			emitter.emit('foo', 'will-not-fire')
+			expect(calls).toEqual([])
+			expect(emitter.count('foo')).toBe(0)
 		})
 
-		// 取消订阅后即便 emit 也不触发
-		unsub()
+		it('onceFront prepends relative to existing listeners', () => {
+			const calls: string[] = []
+			emitter.on('bar', (a, b) => calls.push(`on:${a + b}`))
+			emitter.onceFront('bar', (a, b) => calls.push(`first:${a * b}`))
 
-		emitter.emit('foo', 'will-not-fire')
-		expect(calls).toEqual([])
-		expect(emitter.count('foo')).toBe(0)
+			emitter.emit('bar', 2, 3)
+			expect(calls).toEqual(['first:6', 'on:5'])
+
+			emitter.emit('bar', 4, 1)
+			expect(calls).toEqual(['first:6', 'on:5', 'on:5'])
+		})
 	})
 
-	it('.onceFront 应将监听器前置并保持调用顺序', () => {
-		const calls: string[] = []
+	describe('many / manyFront', () => {
+		it.each([
+			{
+				name: 'many',
+				register: (times: number, fn: (m: string) => void) =>
+					emitter.many('foo', times, fn),
+			},
+			{
+				name: 'manyFront',
+				register: (times: number, fn: (m: string) => void) =>
+					emitter.manyFront('foo', times, fn),
+			},
+		] as const)('$name only fires N times', ({ register }) => {
+			const calls: string[] = []
+			register(3, (m) => calls.push(m))
 
-		emitter.on('bar', (a, b) => {
-			calls.push(`on:${a + b}`)
+			emitter.emit('foo', 'a')
+			emitter.emit('foo', 'b')
+			emitter.emit('foo', 'c')
+			emitter.emit('foo', 'd') // 超出次数不应再触发
+
+			expect(calls).toEqual(['a', 'b', 'c'])
+			expect(emitter.count('foo')).toBe(0)
 		})
 
-		emitter.onceFront('bar', (a, b) => {
-			calls.push(`first:${a * b}`)
+		it('manyFront prepends relative to existing listeners', () => {
+			const calls: string[] = []
+			emitter.on('bar', (a, b) => calls.push(`on:${a + b}`))
+			emitter.manyFront('bar', 2, (a, b) => calls.push(`first:${a * b}`))
+
+			emitter.emit('bar', 2, 3)
+			emitter.emit('bar', 4, 1)
+			emitter.emit('bar', 1, 2)
+
+			expect(calls).toEqual(['first:6', 'on:5', 'first:4', 'on:5', 'on:3'])
 		})
 
-		emitter.emit('bar', 2, 3)
-
-		// onceFront 先运行，然后普通 on
-		expect(calls).toEqual(['first:6', 'on:5'])
-		expect(emitter.count('bar')).toBe(1)
-
-		// 再次 emit 只剩 on
-		emitter.emit('bar', 4, 1)
-		expect(calls).toEqual(['first:6', 'on:5', 'on:5'])
-	})
-
-	it('允许多个 .once 独立调用', () => {
-		const callsA: string[] = []
-		const callsB: string[] = []
-
-		emitter.once('foo', (m) => callsA.push(`A:${m}`))
-		emitter.once('foo', (m) => callsB.push(`B:${m}`))
-
-		emitter.emit('foo', 'x')
-		emitter.emit('foo', 'y')
-
-		expect(callsA).toEqual(['A:x'])
-		expect(callsB).toEqual(['B:x'])
-		expect(emitter.count('foo')).toBe(0)
-	})
-})
-
-describe('事件多次监听: many / manyFront', () => {
-	let emitter: Eventure<Events>
-	beforeEach(() => {
-		emitter = new Eventure()
-	})
-	it('.many 应仅触发 N 次监听', () => {
-		const calls: string[] = []
-
-		emitter.many('foo', 3, (msg) => {
-			calls.push(msg)
+		it('throws when times < 1', () => {
+			expect(() => emitter.many('foo', 0, () => {})).toThrow()
+			expect(() => emitter.many('foo', -1, () => {})).toThrow()
 		})
-
-		emitter.emit('foo', 'a')
-		emitter.emit('foo', 'b')
-		emitter.emit('foo', 'c')
-		emitter.emit('foo', 'd') // 超出次数不应再触发
-
-		expect(calls).toEqual(['a', 'b', 'c'])
-		expect(emitter.count('foo')).toBe(0)
-	})
-
-	it('many 返回的取消订阅函数生效，主动取消后不再触发', () => {
-		const calls: string[] = []
-
-		const unsub = emitter.many('foo', 2, (msg) => {
-			calls.push(msg)
-		})
-
-		// 手动取消订阅后无论是否达到次数，都不会触发
-		unsub()
-
-		emitter.emit('foo', 'x')
-		emitter.emit('foo', 'y')
-		expect(calls).toEqual([])
-		expect(emitter.count('foo')).toBe(0)
-	})
-
-	it('.manyFront 应将监听器前置并保持调用顺序', () => {
-		const calls: string[] = []
-
-		emitter.on('bar', (a, b) => {
-			calls.push(`on:${a + b}`)
-		})
-
-		emitter.manyFront('bar', 2, (a, b) => {
-			calls.push(`first:${a * b}`)
-		})
-
-		emitter.emit('bar', 2, 3)
-		expect(calls).toEqual(['first:6', 'on:5'])
-		expect(emitter.count('bar')).toBe(2)
-
-		emitter.emit('bar', 4, 1)
-		expect(calls).toEqual(['first:6', 'on:5', 'first:4', 'on:5'])
-		expect(emitter.count('bar')).toBe(1)
-
-		emitter.emit('bar', 1, 2)
-		expect(calls).toEqual(['first:6', 'on:5', 'first:4', 'on:5', 'on:3'])
-	})
-
-	it('允许多个 .many 独立调用', () => {
-		const callsA: string[] = []
-		const callsB: string[] = []
-
-		emitter.many('foo', 2, (m) => callsA.push(`A:${m}`))
-		emitter.many('foo', 3, (m) => callsB.push(`B:${m}`))
-
-		emitter.emit('foo', '1')
-		emitter.emit('foo', '2')
-		emitter.emit('foo', '3')
-
-		expect(callsA).toEqual(['A:1', 'A:2'])
-		expect(callsB).toEqual(['B:1', 'B:2', 'B:3'])
-		expect(emitter.count('foo')).toBe(0)
-	})
-
-	it('count 非正整数时应抛出异常', () => {
-		expect(() => emitter.many('foo', 0, () => {})).toThrow()
-		expect(() => emitter.many('foo', -1, () => {})).toThrow()
 	})
 })

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { EvtChannel } from '../src'
+import { EvtChannel } from 'eventure'
+import { silentLogger } from './testUtils'
 
 type StringEvent = (value: string) => string | Promise<string> | void
 
@@ -7,7 +8,7 @@ describe('EvtChannel core', () => {
 	let channel: EvtChannel<StringEvent>
 
 	beforeEach(() => {
-		channel = new EvtChannel()
+		channel = new EvtChannel({ logger: silentLogger })
 	})
 
 	it('registers listeners, supports abort signals and clearing', () => {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure } from '../src'
+import { Eventure } from 'eventure'
+import { silentLogger } from './testUtils'
 
 interface NumberPipelineEvents {
 	numEvent: (value: number, next: (value: number) => number) => number
@@ -8,13 +9,13 @@ interface VoidPipelineEvents {
 	voidEvent: (text: string, next: (text: string) => void) => void
 }
 
-describe('waterfall - 数字流水线', () => {
+describe('Eventure.waterfall (number pipeline)', () => {
 	let emitter: Eventure<NumberPipelineEvents>
 	beforeEach(() => {
-		emitter = new Eventure()
+		emitter = new Eventure({ logger: silentLogger })
 	})
 
-	it('应按注册顺序依次调用所有 listener，并返回正确计算结果', () => {
+	it('runs listeners in order and returns the final value', () => {
 		const calls: string[] = []
 		emitter.on('numEvent', (v, next) => {
 			calls.push('first')
@@ -34,7 +35,7 @@ describe('waterfall - 数字流水线', () => {
 		expect(res).toEqual({ ok: true, value: 9 }) // (5+1)*2-3 = 9
 	})
 
-	it('当没有 listeners 时，仅执行 inner 并返回其结果', () => {
+	it('runs inner only when there are no listeners', () => {
 		const calls: string[] = []
 		const res = emitter.waterfall('numEvent', 7, (v: number) => {
 			calls.push('inner-only')
@@ -45,7 +46,7 @@ describe('waterfall - 数字流水线', () => {
 		expect(res).toEqual({ ok: true, value: 70 })
 	})
 
-	it('listener 不调用 next 时，中断流水线，ok 为 false', () => {
+	it('marks ok=false when a listener interrupts (does not call next)', () => {
 		const calls: string[] = []
 		emitter.on('numEvent', (v, next) => {
 			calls.push('interrupt')
@@ -58,13 +59,13 @@ describe('waterfall - 数字流水线', () => {
 	})
 })
 
-describe('waterfall - 空返回流水线', () => {
+describe('Eventure.waterfall (void pipeline)', () => {
 	let emitter: Eventure<VoidPipelineEvents>
 	beforeEach(() => {
-		emitter = new Eventure()
+		emitter = new Eventure({ logger: silentLogger })
 	})
 
-	it('应按注册顺序依次调用所有 listener，并完成', () => {
+	it('runs listeners in order', () => {
 		const calls: string[] = []
 		emitter.on('voidEvent', (text, next) => {
 			calls.push(`L1:${text}`)
@@ -80,7 +81,7 @@ describe('waterfall - 空返回流水线', () => {
 		expect(res).toEqual({ ok: true, value: undefined })
 	})
 
-	it('listener 中断时，不执行后续，ok 为 false', () => {
+	it('stops and marks ok=false when interrupted', () => {
 		const calls: string[] = []
 		emitter.on('voidEvent', (text, next) => {
 			calls.push(text)
@@ -96,8 +97,31 @@ describe('waterfall - 空返回流水线', () => {
 		expect(res).toEqual({ ok: false, value: undefined })
 	})
 
-	it('当没有 listeners 时，应直接返回 ok=true, value=undefined', () => {
+	it('returns ok=true when there are no listeners', () => {
 		const res = emitter.waterfall('voidEvent', 'nothing')
 		expect(res).toEqual({ ok: true, value: undefined })
+	})
+})
+
+describe('runWaterfall implementation details', () => {
+	it('supports 5+ args (fallback apply path)', () => {
+		type ManyArgsEvents = {
+			ev: (
+				a: number,
+				b: number,
+				c: number,
+				d: number,
+				e: number,
+				next: (a: number, b: number, c: number, d: number, e: number) => number,
+			) => number
+		}
+		const emitter = new Eventure<ManyArgsEvents>({ logger: silentLogger })
+		emitter.on('ev', (a, b, c, d, e, next) => next(a + 1, b, c, d, e))
+		emitter.on('ev', (a, b, c, d, e, next) => next(a, b + 2, c, d, e))
+
+		const res = emitter.waterfall('ev', 1, 2, 3, 4, 5, (a, b, c, d, e) => {
+			return a + b + c + d + e
+		})
+		expect(res).toEqual({ ok: true, value: 1 + 1 + 2 + 2 + 3 + 4 + 5 })
 	})
 })

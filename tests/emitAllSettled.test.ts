@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { EvtChannel, Eventure, ORIGFUNC } from '../src'
-import type { EmitSettledRecord } from '../src'
+import type { EmitSettledRecord } from 'eventure'
+import { Eventure, EvtChannel, ORIGFUNC } from 'eventure'
 import { silentLogger } from './testUtils'
 
 type Result = string | Error

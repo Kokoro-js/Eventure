@@ -1,19 +1,20 @@
 // tests/when.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure } from '../src'
+import { Eventure } from 'eventure'
+import { silentLogger } from './testUtils'
 
 interface Events {
 	num: [number]
 	str: [string]
 }
 
-describe('Eventified.when', () => {
+describe('Eventure when()', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
-		emitter = new Eventure()
+		emitter = new Eventure({ logger: silentLogger })
 	})
 
-	it('when(...).once: only fires when predicate is true, and unsubscribes after first match', () => {
+	it('once() only fires when predicate matches (and auto-unsubscribes)', () => {
 		const calls: number[] = []
 
 		// 只在数字为偶数时触发一次
@@ -30,7 +31,7 @@ describe('Eventified.when', () => {
 		expect(calls).toEqual([4]) // 已自动退订，不再触发
 	})
 
-	it('when(...).onceFront: respects prepend order and predicate', () => {
+	it('onceFront() respects prepend order and predicate', () => {
 		const calls: string[] = []
 
 		emitter.on('str', (s) => calls.push(`on:${s}`))
@@ -52,7 +53,7 @@ describe('Eventified.when', () => {
 		expect(calls).toEqual(['on:world']) // 仅剩普通 listener
 	})
 
-	it('when(...).many: 触发多次后自动退订，仅计数 predicate 为 true 的情况', () => {
+	it('many() counts only predicate=true emissions', () => {
 		const calls: number[] = []
 
 		// 只在正数时，连续触发三次后退订
@@ -72,7 +73,7 @@ describe('Eventified.when', () => {
 		expect(calls).toEqual([1, 2, 3]) // 不再触发
 	})
 
-	it('when(...).manyFront: respects prepend order and次数限制', () => {
+	it('manyFront() respects prepend order and limit', () => {
 		const calls: string[] = []
 
 		emitter.on('str', (s) => calls.push(`on:${s}`))
@@ -93,7 +94,7 @@ describe('Eventified.when', () => {
 		expect(calls).toEqual(['on:c'])
 	})
 
-	it('when without predicate behaves like many with always-true predicate', () => {
+	it('when() without predicate behaves like always-true', () => {
 		const calls: number[] = []
 
 		// 等同于 .when("num", () => true).once(...)
@@ -104,7 +105,7 @@ describe('Eventified.when', () => {
 		expect(calls).toEqual([7])
 	})
 
-	it('multiple when() chains are independent', () => {
+	it('supports multiple independent when() chains', () => {
 		const evens: number[] = []
 		const odds: number[] = []
 
