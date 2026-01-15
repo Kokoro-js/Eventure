@@ -30,6 +30,7 @@ import type {
 	EventEmitterOptions,
 	EventListener,
 	EventResult,
+	EmitSettledRecord,
 	OnOptions,
 	Unsubscribe,
 } from './types'
@@ -37,22 +38,21 @@ import {
 	appendListenerCopy,
 	copyWithoutIndex,
 	createWrapHelper,
+	insertListenerCopy,
 	ORIGFUNC,
+	isPromiseLike,
+	noopSubscription,
 	onSyncError,
 	prependListenerCopy,
+	resolveInsertIndex,
+	withAbortSignal,
+	attachDispose,
 } from './utils'
 
 export type ChannelOptions<D extends EventDescriptor> = Omit<
 	EventEmitterOptions<Record<string, D>>,
 	'events'
 >
-
-const noopSubscription: Unsubscribe = (() => {}) as Unsubscribe
-try {
-	;(noopSubscription as any)[Symbol.dispose] = noopSubscription
-} catch {
-	/* older runtimes may lack Symbol.dispose */
-}
 
 export type ChannelFireSyncResult<D extends EventDescriptor> = FireSyncRecord<D>
 export type ChannelFireAsyncResult<D extends EventDescriptor> =
@@ -85,7 +85,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 	protected _checkSyncFuncReturnPromise: boolean
 	protected _errorPolicy: ErrorPolicy
 
-	protected _wrap: <T extends Function>(listener: T) => T
+	protected _wrap: <T extends (...args: any[]) => any>(listener: T) => T
 
 	protected readonly _singleRegister: RegisterSingle<D>
 
@@ -116,7 +116,8 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		opts?: OnOptions,
 		prepend?: boolean,
 	): Unsubscribe {
-		if (opts?.signal?.aborted) return noopSubscription
+		const signal = opts?.signal
+		if (signal?.aborted) return noopSubscription
 
 		const fn = this._wrap(listener)
 		const prev = this._listeners
@@ -133,26 +134,14 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 
 		const sub = this._makeSubscription(listener)
 
-		if (opts?.signal) {
-			const abortUnsub = () => {
-				sub()
-				opts.signal!.removeEventListener('abort', abortUnsub)
-			}
-			opts.signal.addEventListener('abort', abortUnsub, { once: true })
-		}
-		return sub
+		return withAbortSignal(signal, sub)
 	}
 
 	protected _makeSubscription(orig: EventListener<D>): Unsubscribe {
 		const unsub: Unsubscribe = (() => {
 			this.off(orig)
 		}) as Unsubscribe
-		try {
-			;(unsub as any)[Symbol.dispose] = unsub
-		} catch {
-			/* no-op for older runtimes */
-		}
-		return unsub
+		return attachDispose(unsub)
 	}
 
 	public on(listener: EventListener<D>, opts?: OnOptions): Unsubscribe {
@@ -163,7 +152,39 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		listener: EventListener<D>,
 		opts?: Omit<OnOptions, 'prepend'>,
 	): Unsubscribe {
-		return this._register(listener, opts, true)
+		return this.onAt({ at: 0, signal: opts?.signal }, listener)
+	}
+
+	public onAt(
+		options: {
+			at: number | ((ctx: { count: number }) => number)
+			signal?: AbortSignal
+		},
+		listener: EventListener<D>,
+	): Unsubscribe {
+		const signal = options.signal
+		if (signal?.aborted) return noopSubscription
+
+		const fn = this._wrap(listener)
+		const prev = this._listeners
+		const count = prev.length
+		const at = options.at
+		const index =
+			typeof at === 'function'
+				? resolveInsertIndex(count, at, { count })
+				: resolveInsertIndex(count, at)
+
+		const next = insertListenerCopy(prev, index, fn)
+		this._listeners = next
+
+		if (next.length > this._maxListeners) {
+			this._logger.warn(
+				`MaxListenersExceededWarning(remind memory leak): channel has ${next.length} listeners that exceed ${this._maxListeners}`,
+			)
+		}
+
+		const sub = this._makeSubscription(listener)
+		return withAbortSignal(signal, sub)
 	}
 
 	public off(listener: EventListener<D>): boolean {
@@ -266,13 +287,91 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return len
 	}
 
-	public async emitCollect(...args: EventArgs<D>): Promise<EventResult<D>[]> {
+	public async emitAll(
+		...args: EventArgs<D>
+	): Promise<Awaited<EventResult<D>>[]> {
 		const fns = this._listeners
-		if (fns.length === 0) return [] as EventResult<D>[]
-		const calls = new Array(fns.length)
-		for (let i = 0; i < fns.length; i++) calls[i] = (fns[i] as any)(...args)
-		const results = await Promise.all(calls)
-		return results as EventResult<D>[]
+		if (fns.length === 0) return []
+
+		const len = fns.length
+		const results = new Array<Awaited<EventResult<D>>>(len)
+		let pending: Promise<void>[] | null = null
+
+		for (let i = 0; i < len; i++) {
+			const fn = fns[i] as any
+			try {
+				const r = fn(...args)
+				if (r instanceof Error) {
+					if (pending) void Promise.allSettled(pending)
+					return Promise.reject(r)
+				}
+				if (isPromiseLike(r)) {
+					pending ??= []
+					pending.push(
+						Promise.resolve(r).then((v: any) => {
+							if (v instanceof Error) throw v
+							results[i] = v
+						}),
+					)
+					continue
+				}
+				results[i] = r
+			} catch (err) {
+				if (pending) void Promise.allSettled(pending)
+				return Promise.reject(err)
+			}
+		}
+
+		if (pending) await Promise.all(pending)
+		return results
+	}
+
+	public async emitSettled(
+		...args: EventArgs<D>
+	): Promise<EmitSettledRecord<EventListener<D>, Awaited<EventResult<D>>>[]> {
+		const fns = this._listeners
+		if (fns.length === 0) return []
+
+		const len = fns.length
+		const results = new Array<
+			EmitSettledRecord<EventListener<D>, Awaited<EventResult<D>>>
+		>(len)
+		let pending: Promise<void>[] | null = null
+
+		for (let i = 0; i < len; i++) {
+			const fn = fns[i]!
+			try {
+				const r = (fn as any)(...args)
+				if (r instanceof Error) {
+					results[i] = { fn, status: 'rejected', reason: r }
+					continue
+				}
+				if (isPromiseLike(r)) {
+					pending ??= []
+					pending.push(
+						Promise.resolve(r).then(
+							(v: any) => {
+								if (v instanceof Error) {
+									results[i] = { fn, status: 'rejected', reason: v }
+								} else {
+									results[i] = { fn, status: 'fulfilled', value: v }
+								}
+							},
+							(reason: unknown) => {
+								results[i] = { fn, status: 'rejected', reason }
+							},
+						),
+					)
+					continue
+				}
+				results[i] = { fn, status: 'fulfilled', value: r }
+			} catch (reason) {
+				results[i] = { fn, status: 'rejected', reason }
+			}
+		}
+
+		if (pending) await Promise.all(pending)
+		return results
 	}
 
 	public count(): number {
@@ -402,8 +501,8 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 	public waterfall(...args: any[]): ChannelWFResult<D> {
 		if (Array.isArray(args[0])) {
 			const [listeners, ...rest] = args as [EventListener<D>[], ...any[]]
-			return runWaterfall(listeners, rest.slice()) as any
+			return runWaterfall(listeners, rest) as any
 		}
-		return runWaterfall(this._listeners, args.slice()) as any
+		return runWaterfall(this._listeners, args) as any
 	}
 }

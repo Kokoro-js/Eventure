@@ -1,5 +1,5 @@
 // tests/waitFor.test.ts
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
 import { Eventure } from '../src'
 
 interface Events {
@@ -11,14 +11,17 @@ describe('Eventure.waitFor 方法', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
 		emitter = new Eventure()
+		jest.useFakeTimers()
+	})
+
+	afterEach(() => {
+		jest.useRealTimers()
 	})
 
 	it('应在事件被 emit 后 resolve，返回参数数组', async () => {
 		const p = emitter.waitFor('data', { timeout: 1000 })
-		// 在下一个 tick 中触发
-		setTimeout(() => {
-			emitter.emit('data', 42)
-		}, 0)
+		setTimeout(() => emitter.emit('data', 42), 0)
+		jest.runAllTimers()
 		const args = await p
 		expect(args).toEqual([42])
 		// resolve 后应自动移除监听器
@@ -26,8 +29,9 @@ describe('Eventure.waitFor 方法', () => {
 	})
 
 	it('在超时未触发时应 reject，并移除监听器', async () => {
-		const timeoutMs = 50
+		const timeoutMs = 10
 		const p = emitter.waitFor('ready', { timeout: timeoutMs })
+		jest.advanceTimersByTime(timeoutMs)
 		await expect(p).rejects.toThrow(
 			`waitFor 'ready' timeout after ${timeoutMs}ms`,
 		)
@@ -35,12 +39,13 @@ describe('Eventure.waitFor 方法', () => {
 	})
 
 	it('带 filter 时若无匹配值应在超时后 reject', async () => {
-		const timeoutMs = 50
+		const timeoutMs = 10
 		const p = emitter.waitFor('data', {
 			timeout: timeoutMs,
 			filter: (v) => v > 100, // 永不满足
 		})
 		emitter.emit('data', 10)
+		jest.advanceTimersByTime(timeoutMs)
 		await expect(p).rejects.toThrow(
 			`waitFor 'data' timeout after ${timeoutMs}ms`,
 		)
@@ -53,9 +58,8 @@ describe('Eventure.waitFor 方法', () => {
 			filter: (v) => v > 10,
 		})
 		emitter.emit('data', 5) // 不匹配，不会 resolve
-		setTimeout(() => {
-			emitter.emit('data', 20) // 第一次匹配
-		}, 0)
+		setTimeout(() => emitter.emit('data', 20), 0) // 第一次匹配
+		jest.runAllTimers()
 		const args = await p
 		expect(args).toEqual([20])
 		expect(emitter.count('data')).toBe(0)
@@ -66,18 +70,14 @@ describe('Eventure.waitFor 方法', () => {
 		// 立即取消
 		p.cancel()
 		emitter.emit('data', 99)
-		// @ts-ignore
-		const result = await Promise.race<'resolved' | 'rejected' | 'no-resolve'>([
-			p.then(() => 'resolved').catch(() => 'rejected'),
-			new Promise<'no-resolve'>((r) => setTimeout(() => r('no-resolve'), 50)),
-		])
-		expect(result).toBe('rejected')
+		await expect(p).rejects.toThrow(`waitFor 'data' cancelled`)
 		expect(emitter.count('data')).toBe(0)
 	})
 
 	it('在 resolve 之后调用 cancel 应为无操作且不抛异常', async () => {
 		const p = emitter.waitFor('data', { timeout: 1000 })
 		setTimeout(() => emitter.emit('data', 2), 0)
+		jest.runAllTimers()
 		const args = await p
 		expect(args).toEqual([2])
 		expect(() => p.cancel()).not.toThrow()
@@ -86,8 +86,9 @@ describe('Eventure.waitFor 方法', () => {
 	it('如果在 waitFor 之前已 emit，应超时 reject', async () => {
 		// 先触发
 		emitter.emit('data', 1)
-		const timeoutMs = 50
+		const timeoutMs = 10
 		const p = emitter.waitFor('data', { timeout: timeoutMs })
+		jest.advanceTimersByTime(timeoutMs)
 		await expect(p).rejects.toThrow(
 			`waitFor 'data' timeout after ${timeoutMs}ms`,
 		)

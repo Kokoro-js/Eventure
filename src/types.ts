@@ -1,5 +1,5 @@
 // types.ts
-/** biome-ignore-all lint/suspicious/noConfusingVoidType: <explanation> */
+/** biome-ignore-all lint/suspicious/noConfusingVoidType: void returns are an intentional part of the public listener API */
 import type { Logger } from './logger'
 
 export type EventDescriptor = readonly [...any[]] | ((...args: any[]) => any)
@@ -30,6 +30,10 @@ export type UnsubscribeFunction = () => void
 export type Unsubscribe = UnsubscribeFunction & {
 	[Symbol.dispose]?: () => void
 }
+
+export type EmitSettledRecord<Fn, Value> =
+	| { fn: Fn; status: 'fulfilled'; value: Value }
+	| { fn: Fn; status: 'rejected'; reason: unknown }
 
 /** —— 注册参数 —— */
 export interface OnOptions {

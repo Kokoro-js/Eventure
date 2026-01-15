@@ -30,14 +30,6 @@ describe('Eventified 核心功能', () => {
 		expect(order).toEqual(['first', 'second'])
 	})
 
-	it('prependListener 能改变执行顺序', () => {
-		const order: string[] = []
-		emitter.on('syncEvt', () => order.push('second'))
-		emitter.onFront('syncEvt', () => order.push('first'))
-		emitter.emit('syncEvt', 0, '')
-		expect(order).toEqual(['first', 'second'])
-	})
-
 	it('removeListener / off 能移除指定监听器', () => {
 		const calls: number[] = []
 		const listener = (n: number, s: string) => calls.push(n)
@@ -86,7 +78,7 @@ describe('Eventified 核心功能', () => {
 	})
 
 	it('超过 maxListeners 会触发 logger.warn', () => {
-		const warn = mock(() => {})
+		const warn = mock((..._args: unknown[]) => {})
 		const logger = {
 			trace: () => {},
 			debug: () => {},
@@ -104,7 +96,9 @@ describe('Eventified 核心功能', () => {
 		local.on('syncEvt', () => {})
 		local.on('syncEvt', () => {})
 		expect(warn.mock.calls.length).toBe(1)
-		expect(String(warn.mock.calls[0][0])).toContain('syncEvt')
+		const firstWarnArg = warn.mock.calls[0]?.[0]
+		expect(firstWarnArg).toBeDefined()
+		expect(String(firstWarnArg)).toContain('syncEvt')
 	})
 
 	it('异步监听器抛错时不向外抛出并交由 logger.error 处理', async () => {

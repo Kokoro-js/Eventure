@@ -70,6 +70,13 @@ emitter.emit("foo", "你好，世界")
 
 更多用法请查看： [tests/](./tests/)
 
+### 🔧 进阶
+
+- `onAt(event, { at, signal? }, listener)`：按指定位置插入监听器（`at` 可为 number 或 `(ctx) => number`）
+- `emitAll(event, ...args)`：并发执行所有监听器，任一抛错/拒绝/返回 `Error` 会 reject（行为类似 `Promise.all`）
+- `emitSettled(event, ...args)`：返回 `{ fn, status, value|reason }[]`，永不 throw（行为类似 `Promise.allSettled`）
+- `listenersUnsafe(event)`：返回内部监听器数组引用（零拷贝，**不要 mutate**；仅用于高级/性能场景）
+
 ## 🤝 贡献指南
 
 欢迎任何形式的贡献！如果你有改进建议或发现了问题，请提交 Pull Request 🙌。

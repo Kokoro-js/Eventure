@@ -1,6 +1,7 @@
 // tests/fire.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { Eventure, IS_ASYNC, ORIGFUNC } from '../src'
+import { silentLogger } from './testUtils'
 
 export interface Events {
 	ev: [string]
@@ -9,7 +10,7 @@ export interface Events {
 describe('Eventified.fire (同步 generator)', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
-		emitter = new Eventure()
+		emitter = new Eventure({ logger: silentLogger })
 	})
 
 	it('应当依次对同步 listener 产出 success 或 error', () => {
@@ -53,7 +54,7 @@ describe('Eventified.fire (同步 generator)', () => {
 		expect(rec.type).toBe('async')
 		// wrapper 上绑定的 ORIGFUNC 正好是原始 asyncFn
 		expect(rec.fn[ORIGFUNC]).toBe(asyncFn)
-		expect((rec.fn as any)[IS_ASYNC]).toBe(true)
+		expect(rec.fn[IS_ASYNC]).toBe(true)
 		await expect(rec.promise).resolves.toBe('OK')
 	})
 
@@ -97,7 +98,7 @@ describe('Eventified.fire (同步 generator)', () => {
 describe('Eventified.fireAsync (异步 AsyncGenerator)', () => {
 	let emitter: Eventure<Events>
 	beforeEach(() => {
-		emitter = new Eventure()
+		emitter = new Eventure({ logger: silentLogger })
 	})
 
 	it('应当依次对所有 listener await 并产出 success 或 error', async () => {
