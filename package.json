@@ -1,9 +1,11 @@
 {
 	"name": "eventure",
 	"version": "0.4.2",
+	"type": "module",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
+	"sideEffects": false,
 	"exports": {
 		".": {
 			"source": "./src/index.ts",
@@ -26,13 +28,13 @@
 	},
 	"license": "Apache-2.0",
 	"scripts": {
-		"dev": "bun run --hot .src\\index.ts",
+		"dev": "bun run --hot ./src/index.ts",
 		"test": "bun test --conditions=\"source\"",
 		"build": "tsdown",
 		"bench:onlyEmit": "cd tinybench && bun ./onlyEmit.ts",
-		"prepublish": "tsdown",
+		"prepublishOnly": "tsdown",
 		"lint": "biome lint",
-		"format:check": "biome format",
+		"format:check": "biome format --check",
 		"format": "biome format --write",
 		"type-check": "tsc --noEmit"
 	},

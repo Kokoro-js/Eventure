@@ -125,4 +125,15 @@ describe('Eventure core', () => {
 		expect(emitter.count('syncEvt')).toBe(0)
 		expect(emitter.listeners('syncEvt')).toEqual([])
 	})
+
+	it("propagates sync errors when errorPolicy is 'throw'", () => {
+		const local = new Eventure<Events>({
+			logger: silentLogger,
+			errorPolicy: 'throw',
+		})
+		local.on('syncEvt', () => {
+			throw new Error('boom')
+		})
+		expect(() => local.emit('syncEvt', 1, 'x')).toThrow('boom')
+	})
 })
