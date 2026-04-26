@@ -94,6 +94,15 @@ const settled = await events.emitSettled('sum', 1, 2)
 
 `emit()` 读取触发开始时的监听器快照。listener 在触发过程中新增或移除，不会影响当前这次触发。
 
+### 监听器上限
+
+```ts
+events.maxListeners = 20
+events.maxListeners = 0 // 不限制
+```
+
+`maxListeners` 默认是 `10`。注册后超过上限时会通过 `logger.warn` 提示；设置为 `0` 或 `Infinity` 表示不限制。其他值必须是非负整数，否则会抛出 `RangeError`。
+
 ### 逐个消费
 
 ```ts
@@ -190,3 +199,4 @@ channel.emit('hello')
 - `waterfall(...args)`
 
 `EvtChannel` 使用与 `Eventure` 相同的构造策略参数，但没有 `events` 预初始化选项。
+`maxListeners` 语义也相同：默认 `10`，`0` 或 `Infinity` 表示不限制。

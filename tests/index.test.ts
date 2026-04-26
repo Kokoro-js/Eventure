@@ -96,6 +96,30 @@ describe('Eventure core', () => {
 		expect(String(warn.mock.calls[0]?.[0])).toContain('syncEvt')
 	})
 
+	it('supports maxListeners=0 as unlimited and rejects invalid limits', () => {
+		const warn = mock((..._args: unknown[]) => {})
+		const local = new Eventure<Pick<Events, 'syncEvt'>>({
+			logger: { ...silentLogger, warn },
+		})
+		local.maxListeners = 0
+
+		for (let i = 0; i < 20; i++) {
+			local.on('syncEvt', () => {})
+		}
+
+		expect(warn.mock.calls.length).toBe(0)
+		expect(() => {
+			local.maxListeners = -1
+		}).toThrow(RangeError)
+		expect(() => {
+			local.maxListeners = 1.5
+		}).toThrow(RangeError)
+
+		local.maxListeners = Infinity
+		local.on('syncEvt', () => {})
+		expect(warn.mock.calls.length).toBe(0)
+	})
+
 	it('captures async errors and forwards them to logger.error', async () => {
 		const errorSpy = mock(() => {})
 		emitter = new Eventure({ logger: { ...silentLogger, error: errorSpy } })

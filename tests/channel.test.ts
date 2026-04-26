@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
 import { EvtChannel } from 'eventure'
 
@@ -60,6 +60,30 @@ describe('EvtChannel core', () => {
 		await expect(waiting).resolves.toEqual(['OK-1'])
 		expect(seen).toEqual(['once:OK-1', 'many:OK-1', 'guard:OK-1', 'many:skip'])
 		expect(channel.count()).toBe(0)
+	})
+
+	it('supports maxListeners=0 as unlimited and rejects invalid limits', () => {
+		const warn = mock((..._args: unknown[]) => {})
+		const local = new EvtChannel<StringEvent>({
+			logger: { ...silentLogger, warn },
+		})
+		local.maxListeners = 0
+
+		for (let i = 0; i < 20; i++) {
+			local.on(() => {})
+		}
+
+		expect(warn.mock.calls.length).toBe(0)
+		expect(() => {
+			local.maxListeners = Number.NaN
+		}).toThrow(RangeError)
+		expect(() => {
+			local.maxListeners = 2.1
+		}).toThrow(RangeError)
+
+		local.maxListeners = Infinity
+		local.on(() => {})
+		expect(warn.mock.calls.length).toBe(0)
 	})
 })
 

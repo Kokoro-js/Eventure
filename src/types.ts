@@ -63,7 +63,7 @@ export interface ListenerWrapPolicy {
 /** —— 构造参数：继承策略类型，附加 logger & 事件预分配 —— */
 export interface EventEmitterOptions<
 	E extends { [K in keyof E]: EventDescriptor } = Record<
-		string,
+		string | symbol,
 		EventDescriptor
 	>,
 > extends ListenerWrapPolicy {

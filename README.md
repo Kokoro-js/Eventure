@@ -60,6 +60,8 @@ Benchmark 源码见 [tinybench/onlyEmit.ts](https://github.com/Kokoro-js/Eventur
 
 每个 sample 内部执行 `100_000` 次 emit，尽量摊薄 benchmark 自身的调度开销。主要性能收益来自 Copy-On-Write 的监听器数组设计，具体见设计说明。
 
+`bench:compare` 用于和 EventEmitter3、EventEmitter2、mitt 做 emit 参考线对比；`bench:api` 用于 Eventure 自身 API 的 base/PR 性能回归检测。
+
 本地记录：Bun 1.3.4，Linux x64，11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz，`hrtimeNow`。参考库：EventEmitter3 ^5.0.4，EventEmitter2 ^6.4.9，mitt ^3.0.1。
 
 Sync emit loop：

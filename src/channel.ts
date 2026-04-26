@@ -1,4 +1,8 @@
 import {
+	emitAllFromListeners,
+	emitSettledFromListeners,
+} from './ext/emitShared'
+import {
 	type FireAsyncRecord,
 	type FireSyncRecord,
 	fireAsyncFromListeners,
@@ -12,6 +16,10 @@ import {
 	type RegisterSingle,
 	type WhenGuard,
 } from './ext/limitSingle'
+import {
+	normalizeMaxListeners,
+	shouldWarnMaxListeners,
+} from './ext/maxListeners'
 import {
 	type CancellablePromise,
 	type WaitForSingleOptions,
@@ -40,7 +48,6 @@ import {
 	createWrapHelper,
 	insertListenerCopy,
 	ORIGFUNC,
-	isPromiseLike,
 	noopSubscription,
 	onSyncError,
 	prependListenerCopy,
@@ -50,7 +57,7 @@ import {
 } from './utils'
 
 export type ChannelOptions<D extends EventDescriptor> = Omit<
-	EventEmitterOptions<Record<string, D>>,
+	EventEmitterOptions<Record<string | symbol, D>>,
 	'events'
 >
 
@@ -77,7 +84,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return this._maxListeners
 	}
 	set maxListeners(count: number) {
-		this._maxListeners = count
+		this._maxListeners = normalizeMaxListeners(count)
 	}
 
 	protected _logger: Logger
@@ -127,7 +134,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 				: appendListenerCopy(prev, fn)
 		this._listeners = next
 
-		if (next.length > this._maxListeners) {
+		if (shouldWarnMaxListeners(next.length, this._maxListeners)) {
 			this._logger.warn(
 				`MaxListenersExceededWarning(remind memory leak): channel has ${next.length} listeners that exceed ${this._maxListeners}`,
 			)
@@ -178,7 +185,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		const next = insertListenerCopy(prev, index, fn)
 		this._listeners = next
 
-		if (next.length > this._maxListeners) {
+		if (shouldWarnMaxListeners(next.length, this._maxListeners)) {
 			this._logger.warn(
 				`MaxListenersExceededWarning(remind memory leak): channel has ${next.length} listeners that exceed ${this._maxListeners}`,
 			)
@@ -288,101 +295,14 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return len
 	}
 
-	public async emitAll(
-		...args: EventArgs<D>
-	): Promise<Awaited<EventResult<D>>[]> {
-		const fns = this._listeners
-		if (fns.length === 0) return []
-
-		const len = fns.length
-		const results = new Array<Awaited<EventResult<D>>>(len)
-		let pending: Promise<unknown>[] | null = null
-
-		for (let i = 0; i < len; i++) {
-			const fn = fns[i] as any
-			try {
-				const r = fn(...args)
-				if (r instanceof Error) {
-					if (pending !== null) void Promise.allSettled(pending)
-					throw r
-				}
-				if (isPromiseLike(r)) {
-					pending ??= []
-					pending.push(
-						Promise.resolve(r).then((v: any) => {
-							if (v instanceof Error) throw v
-							results[i] = v
-							return v
-						}),
-					)
-					continue
-				}
-				results[i] = r
-			} catch (err) {
-				if (pending !== null) void Promise.allSettled(pending)
-				throw err
-			}
-		}
-
-		if (pending !== null) await Promise.all(pending)
-		return results
+	public emitAll(...args: EventArgs<D>): Promise<Awaited<EventResult<D>>[]> {
+		return emitAllFromListeners(this._listeners, args)
 	}
 
-	public async emitSettled(
+	public emitSettled(
 		...args: EventArgs<D>
 	): Promise<EmitSettledRecord<EventListener<D>, Awaited<EventResult<D>>>[]> {
-		const fns = this._listeners
-		if (fns.length === 0) return []
-
-		const len = fns.length
-		const results = new Array<
-			EmitSettledRecord<EventListener<D>, Awaited<EventResult<D>>>
-		>(len)
-		let pending: Promise<unknown>[] | null = null
-
-		for (let i = 0; i < len; i++) {
-			const fn = fns[i]!
-			try {
-				const r = (fn as any)(...args)
-				if (r instanceof Error) {
-					results[i] = { fn, status: 'rejected', reason: r }
-					continue
-				}
-				if (isPromiseLike(r)) {
-					pending ??= []
-					pending.push(
-						Promise.resolve(r).then(
-							(v: any) => {
-								if (v instanceof Error) {
-									const record = {
-										fn,
-										status: 'rejected',
-										reason: v,
-									} as const
-									results[i] = record
-									return record
-								}
-								const record = { fn, status: 'fulfilled', value: v } as const
-								results[i] = record
-								return record
-							},
-							(reason: unknown) => {
-								const record = { fn, status: 'rejected', reason } as const
-								results[i] = record
-								return record
-							},
-						),
-					)
-					continue
-				}
-				results[i] = { fn, status: 'fulfilled', value: r }
-			} catch (reason) {
-				results[i] = { fn, status: 'rejected', reason }
-			}
-		}
-
-		if (pending !== null) await Promise.all(pending)
-		return results
+		return emitSettledFromListeners(this._listeners, args)
 	}
 
 	public count(): number {

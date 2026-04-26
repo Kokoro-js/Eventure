@@ -6,6 +6,8 @@
 		"tinybench": "^6.0.0"
 	},
 	"scripts": {
-		"bench": "bun ./onlyEmit"
+		"bench": "bun ./onlyEmit",
+		"bench:api": "bun ./apiRegression",
+		"bench:compare": "bun ./onlyEmit"
 	}
 }

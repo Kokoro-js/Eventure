@@ -55,11 +55,16 @@ Benchmark 源码：[tinybench/onlyEmit.ts](https://github.com/Kokoro-js/Eventure
 - PR CI 在同一个 tinybench 进程里同时加载 base commit 与 PR 的 `dist/index.mjs`，并把 EventEmitter3、EventEmitter2、mitt 作为同机参考线；参考库版本会写入 markdown 方便复现，但不参与回归判断；
 - paired benchmark 使用 `base -> PR -> controls -> PR -> base` 的镜像任务位置，报告里聚合两次 Eventure base/PR 结果，降低固定执行顺序带来的偏差；
 - paired benchmark 只比较同一轮里的 Eventure base 与 Eventure PR，外部库不参与版本或回归对比；markdown 会写入 GitHub step summary/output，不再落盘两份 JSON 后二次 compare。
+- `bench:onlyEmit` / `bench:compare` 保留为 emit 参考线，对比 Eventure 与 EventEmitter3、EventEmitter2、mitt；
+- `bench:api` 是 Eventure-only PR 回归 benchmark，覆盖命名事件、单事件通道、emit 参数形态、listener 数量、on/off churn、emitAll、emitSettled、fire、waterfall 和 waitFor；它不和外部库比较，专门看 base/PR 的 API 性能变化。
 
 可通过环境变量调整测试时间：
 
 - `BENCH_TIME_SYNC_MS`
 - `BENCH_TIME_ASYNC_MS`
+- `BENCH_TIME_API_MS`
+- `BENCH_FAIL_ON_REGRESSION`
+- `BENCH_REGRESSION_THRESHOLD_PCT`
 - `BENCH_EVENTURE_IMPORT`
 - `BENCH_EVENTURE_BASELINE_IMPORT`
 - `BENCH_EVENTURE_TARGET_IMPORT`
