@@ -6,6 +6,7 @@ import EventEmitter2 from 'eventemitter2'
 import EventEmitter3 from 'eventemitter3'
 import mitt from 'mitt'
 import { Bench, hrtimeNow } from 'tinybench'
+
 // 记得 build 了再来测试噢
 import { Eventure as MyEmitter } from '../dist/index.mjs'
 import pkg from './package.json'
@@ -141,44 +142,44 @@ implementations.forEach(({ label, create }) => {
 	let done: Promise<void> | null = null
 	let resolveDone: (() => void) | null = null
 
-		benchAsync.add(
-			label.replace('pure sync', 'async end-to-end'),
-			async () => {
-				for (let i = 0; i < RUNS; i++) {
+	benchAsync.add(
+		label.replace('pure sync', 'async end-to-end'),
+		async () => {
+			for (let i = 0; i < RUNS; i++) {
 				emitter.emit(EVENT, PAYLOAD)
 			}
 			const currentDone = done
 			if (currentDone) await currentDone
-			},
-			{
-				beforeAll() {
-					emitter = create()
-					// 每次 emit 都触发一次微任务，且 listener 返回 Promise（模拟 end-to-end async）
-					const onAsync = (data: any) => {
-						pending++
-						if (!done) {
-							done = new Promise<void>((resolve) => {
-								resolveDone = resolve
-							})
-						}
-						return Promise.resolve().then(() => {
-							cnt += data.msg.length
-							if (--pending === 0) {
-								const resolve = resolveDone
-								resolveDone = null
-								const localDone = done
-								done = null
-								if (localDone) resolve?.()
-							}
+		},
+		{
+			beforeAll() {
+				emitter = create()
+				// 每次 emit 都触发一次微任务，且 listener 返回 Promise（模拟 end-to-end async）
+				const onAsync = (data: any) => {
+					pending++
+					if (!done) {
+						done = new Promise<void>((resolve) => {
+							resolveDone = resolve
 						})
 					}
-					emitter.on(EVENT, onAsync)
-					emitter.on(EVENT, onAsync)
-				},
-				beforeEach() {
-					cnt = 0
-					pending = 0
-					done = null
+					return Promise.resolve().then(() => {
+						cnt += data.msg.length
+						if (--pending === 0) {
+							const resolve = resolveDone
+							resolveDone = null
+							const localDone = done
+							done = null
+							if (localDone) resolve?.()
+						}
+					})
+				}
+				emitter.on(EVENT, onAsync)
+				emitter.on(EVENT, onAsync)
+			},
+			beforeEach() {
+				cnt = 0
+				pending = 0
+				done = null
 				resolveDone = null
 			},
 		},

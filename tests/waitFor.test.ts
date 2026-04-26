@@ -1,6 +1,8 @@
 // tests/waitFor.test.ts
 import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
+
 import { Eventure } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 interface Events {

@@ -1,9 +1,8 @@
 import { defineConfig } from 'tsdown'
 
-// biome-ignore lint/style/noDefaultExport: tsdown expects default-exported config
 export default defineConfig({
 	exports: {
-		devExports: "source"
+		devExports: 'source',
 	},
 	entry: {
 		index: 'src/index.ts',

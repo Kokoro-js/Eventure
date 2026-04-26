@@ -1,6 +1,8 @@
 // tests/fire.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
+
 import { Eventure, IS_ASYNC, ORIGFUNC } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 export interface Events {

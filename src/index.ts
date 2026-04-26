@@ -1,5 +1,5 @@
 export * from './eventified'
 export * from './channel'
-export * from './types'
+export type * from './types'
 export * from './utils'
 export * from './logger'

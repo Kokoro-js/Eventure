@@ -1,6 +1,8 @@
 // tests/when.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
+
 import { Eventure } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 interface Events {
@@ -111,9 +113,7 @@ describe('Eventure when()', () => {
 
 		emitter.when('num', (n) => n % 2 === 0).many(2, (n) => evens.push(n))
 
-		emitter
-			.when('num', (n) => n % 2 === 1)
-			.once((n) => odds.push(n))
+		emitter.when('num', (n) => n % 2 === 1).once((n) => odds.push(n))
 
 		// mixed sequence
 		;[1, 2, 3, 4, 5].forEach((n) => emitter.emit('num', n))

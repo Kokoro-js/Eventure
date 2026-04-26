@@ -26,8 +26,8 @@ export function* fireFromListeners<D extends EventDescriptor>(
 ): Generator<FireSyncRecord<D>> {
 	const len = listeners.length
 	for (let i = 0; i < len; i++) {
-		const fn = listeners[i] as EventListener<D>
-		if ((fn as any)[IS_ASYNC]) {
+		const fn = listeners[i]!
+		if ((fn as any)[IS_ASYNC] === true) {
 			try {
 				const promise = fn(...args) as Awaitable<EventResult<D>>
 				yield { type: 'async', fn, promise }
@@ -59,7 +59,7 @@ export async function* fireAsyncFromListeners<D extends EventDescriptor>(
 ): AsyncGenerator<FireAsyncRecord<D>> {
 	const len = listeners.length
 	for (let i = 0; i < len; i++) {
-		const fn = listeners[i] as EventListener<D>
+		const fn = listeners[i]!
 		try {
 			const result = (await fn(...args)) as Awaited<EventResult<D>>
 			if ((result as any) instanceof Error) {

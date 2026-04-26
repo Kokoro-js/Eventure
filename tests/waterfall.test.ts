@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
+
 import { Eventure } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 interface NumberPipelineEvents {

@@ -5,7 +5,6 @@ import type {
 	Unsubscribe,
 } from '@/types'
 
-// biome-ignore lint/suspicious/noConfusingVoidType: void is intentional for ergonomics (predicates can omit an explicit return)
 export type GuardResult = boolean | undefined | void
 export type GuardPredicate<D extends EventDescriptor> = (
 	...args: EventArgs<D>
@@ -48,7 +47,7 @@ export function limitSingle<D extends EventDescriptor>(
 
 	const attach = (handler: EventListener<D>) => register(handler, prepend)
 
-	if (!predicate) {
+	if (predicate === undefined) {
 		const handler = ((...args: EventArgs<D>) => {
 			try {
 				wrapped(...args)
@@ -61,7 +60,8 @@ export function limitSingle<D extends EventDescriptor>(
 	}
 
 	const handler = ((...args: EventArgs<D>) => {
-		if (!predicate(...args)) return
+		const matched = predicate(...args)
+		if (matched === false || matched === undefined) return
 		try {
 			wrapped(...args)
 		} finally {

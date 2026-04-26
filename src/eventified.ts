@@ -79,12 +79,10 @@ export type EventureSplit<
 	E extends IEventMap<E>,
 	K extends WFKeys<E>,
 > = SplitWaterfall<E[K]>
-export type EventureWFResult<
-	E extends IEventMap<E>,
-	K extends WFKeys<E>,
-> = EventureSplit<E, K> extends never
-	? WFResult<never>
-	: WFResult<EventureSplit<E, K>['ret']>
+export type EventureWFResult<E extends IEventMap<E>, K extends WFKeys<E>> =
+	EventureSplit<E, K> extends never
+		? WFResult<never>
+		: WFResult<EventureSplit<E, K>['ret']>
 
 export class Eventure<
 	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
@@ -152,9 +150,9 @@ export class Eventure<
 		forcePrepend?: boolean,
 	): Unsubscribe {
 		const signal = opts?.signal
-		if (signal?.aborted) return noopSubscription
+		if (signal !== undefined && signal.aborted) return noopSubscription
 
-		const fn = this._wrap(listener) as EventListener<E[K]>
+		const fn = this._wrap(listener)
 		const prev = this._listeners[event]
 		const usePrepend = forcePrepend ?? opts?.prepend ?? false
 		const next = usePrepend
@@ -206,9 +204,9 @@ export class Eventure<
 		listener: EventListener<E[K]>,
 	): Unsubscribe {
 		const signal = options.signal
-		if (signal?.aborted) return noopSubscription
+		if (signal !== undefined && signal.aborted) return noopSubscription
 
-		const fn = this._wrap(listener) as EventListener<E[K]>
+		const fn = this._wrap(listener)
 		const prev = this._listeners[event]
 		const count = prev?.length ?? 0
 		const at = options.at
@@ -260,7 +258,7 @@ export class Eventure<
 	}
 
 	/** 批量清空；缺省则清空全部 */
-	public clear<K extends keyof E>(event?: K): void {
+	public clear(event?: keyof E): void {
 		if (event === undefined) {
 			this._listeners = Object.create(null)
 			this._activeEvents.clear()
@@ -357,15 +355,15 @@ export class Eventure<
 
 		const len = fns.length
 		const results = new Array<Awaited<EventResult<E[K]>>>(len)
-		let pending: Promise<void>[] | null = null
+		let pending: Promise<unknown>[] | null = null
 
 		for (let i = 0; i < len; i++) {
 			const fn = fns[i] as any
 			try {
 				const r = fn(...args)
 				if (r instanceof Error) {
-					if (pending) void Promise.allSettled(pending)
-					return Promise.reject(r)
+					if (pending !== null) void Promise.allSettled(pending)
+					throw r
 				}
 				if (isPromiseLike(r)) {
 					pending ??= []
@@ -373,18 +371,19 @@ export class Eventure<
 						Promise.resolve(r).then((v: any) => {
 							if (v instanceof Error) throw v
 							results[i] = v
+							return v
 						}),
 					)
 					continue
 				}
 				results[i] = r
 			} catch (err) {
-				if (pending) void Promise.allSettled(pending)
-				return Promise.reject(err)
+				if (pending !== null) void Promise.allSettled(pending)
+				throw err
 			}
 		}
 
-		if (pending) await Promise.all(pending)
+		if (pending !== null) await Promise.all(pending)
 		return results
 	}
 
@@ -401,7 +400,7 @@ export class Eventure<
 		const results = new Array<
 			EmitSettledRecord<EventListener<E[K]>, Awaited<EventResult<E[K]>>>
 		>(len)
-		let pending: Promise<void>[] | null = null
+		let pending: Promise<unknown>[] | null = null
 
 		for (let i = 0; i < len; i++) {
 			const fn = fns[i]!
@@ -417,13 +416,22 @@ export class Eventure<
 						Promise.resolve(r).then(
 							(v: any) => {
 								if (v instanceof Error) {
-									results[i] = { fn, status: 'rejected', reason: v }
-								} else {
-									results[i] = { fn, status: 'fulfilled', value: v }
+									const record = {
+										fn,
+										status: 'rejected',
+										reason: v,
+									} as const
+									results[i] = record
+									return record
 								}
+								const record = { fn, status: 'fulfilled', value: v } as const
+								results[i] = record
+								return record
 							},
 							(reason: unknown) => {
-								results[i] = { fn, status: 'rejected', reason }
+								const record = { fn, status: 'rejected', reason } as const
+								results[i] = record
+								return record
 							},
 						),
 					)
@@ -435,15 +443,15 @@ export class Eventure<
 			}
 		}
 
-		if (pending) await Promise.all(pending)
+		if (pending !== null) await Promise.all(pending)
 		return results
 	}
 
 	/** 观测/诊断工具：保持只读快照 */
-	public count<K extends keyof E>(event: K): number {
+	public count(event: keyof E): number {
 		return this._listeners[event]?.length ?? 0
 	}
-	public events(): Array<keyof E> {
+	public events(): (keyof E)[] {
 		return Array.from(this._activeEvents)
 	}
 	public listeners<K extends keyof E>(event: K): EventListener<E[K]>[] {

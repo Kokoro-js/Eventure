@@ -7,11 +7,15 @@ export type Logger = {
 	fatal: (...arguments_: unknown[]) => void
 }
 
+const bindConsoleMethod = (
+	method: ((...arguments_: unknown[]) => void) | undefined,
+) => (method ?? console.log).bind(console)
+
 export const defaultLogger: Logger = {
 	info: console.info.bind(console),
 	warn: console.warn.bind(console),
 	error: console.error.bind(console),
-	debug: console.debug?.bind(console) ?? console.log.bind(console),
-	trace: console.trace?.bind(console) ?? console.log.bind(console),
+	debug: bindConsoleMethod(console.debug),
+	trace: bindConsoleMethod(console.trace),
 	fatal: console.error.bind(console),
 }

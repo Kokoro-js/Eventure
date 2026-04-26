@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
@@ -54,16 +56,19 @@ interface DiffRow {
 
 const usage = `Usage: bun scripts/compareBenchmarks.ts <baseline.json> <target.json> [output.md]`
 
-const [, , baselinePathArg, targetPathArg, outputPathArg] = process.argv
+const baselinePathArg = process.argv[2]
+const targetPathArg = process.argv[3]
+const outputPathArg = process.argv[4]
 
-if (!baselinePathArg || !targetPathArg) {
+if (baselinePathArg === undefined || targetPathArg === undefined) {
 	console.error(usage)
 	process.exit(1)
 }
 
 const baselinePath = resolve(process.cwd(), baselinePathArg)
 const targetPath = resolve(process.cwd(), targetPathArg)
-const outputPath = outputPathArg ? resolve(process.cwd(), outputPathArg) : null
+const outputPath =
+	outputPathArg === undefined ? null : resolve(process.cwd(), outputPathArg)
 
 const baselineReport = JSON.parse(
 	await readFile(baselinePath, 'utf8'),
@@ -73,7 +78,9 @@ const targetReport = JSON.parse(
 ) as BenchmarkReport
 
 const benchMap = (report: BenchmarkReport) =>
-	Object.fromEntries(report.benches.map((bench) => [bench.mode, bench]))
+	Object.fromEntries(
+		report.benches.map((bench) => [bench.mode, bench]),
+	) as Partial<Record<BenchSummary['mode'], BenchSummary>>
 
 const baselineBenches = benchMap(baselineReport)
 const targetBenches = benchMap(targetReport)
@@ -87,7 +94,7 @@ const diffs: DiffRow[] = []
 for (const mode of benchModes) {
 	const baselineBench = baselineBenches[mode]
 	const targetBench = targetBenches[mode]
-	if (!baselineBench && !targetBench) continue
+	if (baselineBench === undefined && targetBench === undefined) continue
 
 	const baseTasks = new Map(
 		(baselineBench?.tasks ?? []).map((task) => [task.label, task]),
@@ -107,19 +114,17 @@ for (const mode of benchModes) {
 				? targetOps - baseOps
 				: undefined
 		const deltaPct =
-			baseOps && targetOps && deltaOps ? (deltaOps / baseOps) * 100 : undefined
+			baseOps !== undefined && targetOps !== undefined && baseOps !== 0
+				? ((targetOps - baseOps) / baseOps) * 100
+				: undefined
 		const combinedRme =
 			(base?.throughput.rme ?? 0) + (target?.throughput.rme ?? 0)
 		const minThreshold = 5
 		const significanceThreshold = Math.max(combinedRme, minThreshold)
 		const significant =
 			deltaPct !== undefined && Math.abs(deltaPct) > significanceThreshold
-		const isRegression = Boolean(
-			significant && deltaPct !== undefined && deltaPct < 0,
-		)
-		const isImprovement = Boolean(
-			significant && deltaPct !== undefined && deltaPct > 0,
-		)
+		const isRegression = deltaPct !== undefined && significant && deltaPct < 0
+		const isImprovement = deltaPct !== undefined && significant && deltaPct > 0
 
 		diffs.push({
 			benchMode: mode,
@@ -147,11 +152,12 @@ const renderSamples = (base?: number, target?: number) => {
 	return `${base ?? '—'}→${target ?? '—'}`
 }
 
+const renderRmeValue = (value?: number) =>
+	value === undefined ? '—' : `${value.toFixed(2)}%`
+
 const renderRme = (base?: number, target?: number) => {
 	if (base === undefined && target === undefined) return '—'
-	const format = (value?: number) =>
-		value === undefined ? '—' : `${value.toFixed(2)}%`
-	return `${format(base)}→${format(target)}`
+	return `${renderRmeValue(base)}→${renderRmeValue(target)}`
 }
 
 const improvements = diffs.filter((row) => row.isImprovement)
@@ -185,15 +191,16 @@ if (improvements.length) {
 
 const renderTableForMode = (mode: BenchSummary['mode']) => {
 	const rows = diffs.filter((row) => row.benchMode === mode)
-	if (!rows.length) return ''
+	if (rows.length === 0) return ''
 	const header = [
 		`### ${mode === 'sync' ? 'Sync emit loop' : 'Async end-to-end'}`,
 		'| Task | Baseline ops/s | PR ops/s | Δ ops/s | Δ % | RME (base→PR) | Samples (base→PR) |',
 		'| --- | --- | --- | --- | --- | --- | --- |',
 	]
 	const body = rows
+		.slice()
 		.sort((a, b) => (a.base?.rank ?? Infinity) - (b.base?.rank ?? Infinity))
-		.map((row) => {
+		.map((row: DiffRow) => {
 			const note =
 				row.significant && row.deltaPct !== undefined
 					? row.deltaPct > 0
@@ -201,7 +208,7 @@ const renderTableForMode = (mode: BenchSummary['mode']) => {
 						: '⚠️'
 					: ''
 			const cells = [
-				note ? `${row.task} ${note}` : row.task,
+				note.length > 0 ? `${row.task} ${note}` : row.task,
 				renderOps(row.base?.throughput.mean),
 				renderOps(row.target?.throughput.mean),
 				renderOps(row.deltaOps),
@@ -223,11 +230,11 @@ const markdownSections = [
 	'',
 	renderTableForMode('sync'),
 	renderTableForMode('async'),
-].filter((line) => line !== undefined && line !== null)
+]
 
 const markdown = markdownSections.join('\n')
 
-if (outputPath) {
+if (outputPath !== null) {
 	await writeFile(outputPath, markdown, 'utf8')
 	console.log(`Benchmark comparison written to ${outputPath}`)
 } else {

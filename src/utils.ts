@@ -12,13 +12,13 @@ const SYMBOL_DISPOSE: symbol | undefined = (Symbol as any).dispose
 export type WrapOptions = Required<ListenerWrapPolicy> & { logger: Logger }
 
 /** 原生 async 函数判定（比 instanceof AsyncFunction 更稳） */
-export function isNativeAsync(fn: Function): boolean {
+export function isNativeAsync(fn: { constructor: { name: string } }): boolean {
 	return fn.constructor.name === 'AsyncFunction'
 }
 
 /** Promise-like 判定（最小成本） */
 export function isPromiseLike(x: unknown): x is Promise<unknown> {
-	return !!x && typeof (x as any).then === 'function'
+	return x !== null && x !== undefined && typeof (x as any).then === 'function'
 }
 
 export function attachDispose<T extends Unsubscribe>(unsub: T): T {
@@ -27,7 +27,7 @@ export function attachDispose<T extends Unsubscribe>(unsub: T): T {
 }
 
 export const noopSubscription: Unsubscribe = attachDispose(
-	(() => undefined) as Unsubscribe,
+	(() => {}) as Unsubscribe,
 )
 
 /** 同步异常处理（emit 热路径使用） */
@@ -42,7 +42,8 @@ export function onSyncError(
 			return
 		case 'throw':
 			throw err
-		// 'silent'：不处理
+		case 'silent':
+			break
 	}
 }
 
@@ -52,17 +53,12 @@ export function wrapListener<T extends (...args: any[]) => any>(
 	opts: WrapOptions,
 ): T {
 	// 已包裹过（如来自 once / waterfall），直接复用
-	if ((listener as any)[ORIGFUNC]) return listener as any
+	if ((listener as any)[ORIGFUNC] !== undefined) return listener as any
 
 	if (!opts.catchPromiseError) return listener as any
 
-	let nativeAsync = false
-	if (!opts.checkSyncFuncReturnPromise) {
-		nativeAsync = isNativeAsync(listener)
-		if (!nativeAsync) return listener as any
-	} else {
-		nativeAsync = isNativeAsync(listener)
-	}
+	const nativeAsync = isNativeAsync(listener)
+	if (!opts.checkSyncFuncReturnPromise && !nativeAsync) return listener as any
 
 	const wrapped = ((...args: Parameters<T>) => {
 		try {
@@ -77,9 +73,7 @@ export function wrapListener<T extends (...args: any[]) => any>(
 						opts.logger.error(err)
 						return err
 					}
-					if (opts.errorPolicy === 'throw') {
-						return Promise.reject(err)
-					}
+					if (opts.errorPolicy === 'throw') throw err
 					// silent
 					return err
 				})

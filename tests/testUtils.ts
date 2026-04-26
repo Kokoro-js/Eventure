@@ -7,12 +7,12 @@ import {
 } from 'eventure'
 
 export const silentLogger: Logger = {
-	trace: () => undefined,
-	debug: () => undefined,
-	info: () => undefined,
-	warn: () => undefined,
-	error: () => undefined,
-	fatal: () => undefined,
+	trace: () => {},
+	debug: () => {},
+	info: () => {},
+	warn: () => {},
+	error: () => {},
+	fatal: () => {},
 }
 
 export function createEventure<E extends IEventMap<E>>() {

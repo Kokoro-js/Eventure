@@ -1,5 +1,4 @@
 // types.ts
-/** biome-ignore-all lint/suspicious/noConfusingVoidType: void returns are an intentional part of the public listener API */
 import type { Logger } from './logger'
 
 export type EventDescriptor = readonly [...any[]] | ((...args: any[]) => any)
@@ -65,5 +64,5 @@ export interface EventEmitterOptions<
 > extends ListenerWrapPolicy {
 	logger?: Logger
 	/** 如果提供，就会在构造时预先 `this._listeners[event] = []` */
-	events?: Array<keyof E>
+	events?: (keyof E)[]
 }

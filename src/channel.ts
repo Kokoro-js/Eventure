@@ -117,13 +117,14 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		prepend?: boolean,
 	): Unsubscribe {
 		const signal = opts?.signal
-		if (signal?.aborted) return noopSubscription
+		if (signal !== undefined && signal.aborted) return noopSubscription
 
 		const fn = this._wrap(listener)
 		const prev = this._listeners
-		const next = prepend
-			? prependListenerCopy(prev, fn)
-			: appendListenerCopy(prev, fn)
+		const next =
+			prepend === true
+				? prependListenerCopy(prev, fn)
+				: appendListenerCopy(prev, fn)
 		this._listeners = next
 
 		if (next.length > this._maxListeners) {
@@ -163,7 +164,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		listener: EventListener<D>,
 	): Unsubscribe {
 		const signal = options.signal
-		if (signal?.aborted) return noopSubscription
+		if (signal !== undefined && signal.aborted) return noopSubscription
 
 		const fn = this._wrap(listener)
 		const prev = this._listeners
@@ -295,15 +296,15 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 
 		const len = fns.length
 		const results = new Array<Awaited<EventResult<D>>>(len)
-		let pending: Promise<void>[] | null = null
+		let pending: Promise<unknown>[] | null = null
 
 		for (let i = 0; i < len; i++) {
 			const fn = fns[i] as any
 			try {
 				const r = fn(...args)
 				if (r instanceof Error) {
-					if (pending) void Promise.allSettled(pending)
-					return Promise.reject(r)
+					if (pending !== null) void Promise.allSettled(pending)
+					throw r
 				}
 				if (isPromiseLike(r)) {
 					pending ??= []
@@ -311,18 +312,19 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 						Promise.resolve(r).then((v: any) => {
 							if (v instanceof Error) throw v
 							results[i] = v
+							return v
 						}),
 					)
 					continue
 				}
 				results[i] = r
 			} catch (err) {
-				if (pending) void Promise.allSettled(pending)
-				return Promise.reject(err)
+				if (pending !== null) void Promise.allSettled(pending)
+				throw err
 			}
 		}
 
-		if (pending) await Promise.all(pending)
+		if (pending !== null) await Promise.all(pending)
 		return results
 	}
 
@@ -336,7 +338,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		const results = new Array<
 			EmitSettledRecord<EventListener<D>, Awaited<EventResult<D>>>
 		>(len)
-		let pending: Promise<void>[] | null = null
+		let pending: Promise<unknown>[] | null = null
 
 		for (let i = 0; i < len; i++) {
 			const fn = fns[i]!
@@ -352,13 +354,22 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 						Promise.resolve(r).then(
 							(v: any) => {
 								if (v instanceof Error) {
-									results[i] = { fn, status: 'rejected', reason: v }
-								} else {
-									results[i] = { fn, status: 'fulfilled', value: v }
+									const record = {
+										fn,
+										status: 'rejected',
+										reason: v,
+									} as const
+									results[i] = record
+									return record
 								}
+								const record = { fn, status: 'fulfilled', value: v } as const
+								results[i] = record
+								return record
 							},
 							(reason: unknown) => {
-								results[i] = { fn, status: 'rejected', reason }
+								const record = { fn, status: 'rejected', reason } as const
+								results[i] = record
+								return record
 							},
 						),
 					)
@@ -370,7 +381,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 			}
 		}
 
-		if (pending) await Promise.all(pending)
+		if (pending !== null) await Promise.all(pending)
 		return results
 	}
 
