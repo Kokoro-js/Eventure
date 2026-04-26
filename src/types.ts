@@ -26,8 +26,13 @@ export type EventListener<D extends EventDescriptor> = (
 ) => EventResult<D>
 
 export type UnsubscribeFunction = () => void
+type DisposeSymbol = typeof Symbol extends { readonly dispose: infer S }
+	? S extends symbol
+		? S
+		: symbol
+	: symbol
 export type Unsubscribe = UnsubscribeFunction & {
-	[Symbol.dispose]?: () => void
+	[K in DisposeSymbol]?: () => void
 }
 
 export type EmitSettledRecord<Fn, Value> =

@@ -2,6 +2,7 @@
 	"name": "eventure",
 	"version": "0.4.4",
 	"type": "module",
+	"packageManager": "bun@1.3.13",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
