@@ -3,7 +3,7 @@ import type {
 	EventDescriptor,
 	EventListener,
 	Unsubscribe,
-} from '@/types'
+} from '../types'
 
 export type GuardResult = boolean | undefined | void
 export type GuardPredicate<D extends EventDescriptor> = (

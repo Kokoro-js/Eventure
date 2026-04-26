@@ -4,8 +4,8 @@ import type {
 	EventDescriptor,
 	EventListener,
 	EventResult,
-} from '@/types'
-import { IS_ASYNC, isPromiseLike } from '@/utils'
+} from '../types'
+import { IS_ASYNC, isPromiseLike } from '../utils'
 
 export type FireSyncRecord<D extends EventDescriptor> =
 	| { type: 'success'; fn: EventListener<D>; result: EventResult<D> }

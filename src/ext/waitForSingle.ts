@@ -3,8 +3,7 @@ import type {
 	EventDescriptor,
 	EventListener,
 	Unsubscribe,
-} from '@/types'
-
+} from '../types'
 import type { RegisterSingle, WrapFn } from './limitSingle'
 
 export interface CancellablePromise<T> extends Promise<T> {

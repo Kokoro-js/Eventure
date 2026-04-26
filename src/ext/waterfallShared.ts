@@ -1,4 +1,4 @@
-import type { EventDescriptor, EventListener } from '@/types'
+import type { EventDescriptor, EventListener } from '../types'
 
 export type SplitWaterfall<D extends EventDescriptor> = D extends (
 	...args: [...infer P, infer N]

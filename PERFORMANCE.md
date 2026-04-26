@@ -1,64 +1,84 @@
-# Performance Notes
+# 性能说明
 
-这份文档解释 Eventure 在保证语义正确性的前提下，主要依靠哪些设计来降低开销与 GC 压力；也说明 `tinybench/onlyEmit.ts` 的测量口径与取舍，方便你和读者判断 benchmark 是否可信、是否适用于自己的场景。
+Eventure 的性能优化集中在 `emit()`。如果一个场景里触发远多于注册和移除，copy-on-write 的监听器数组通常更划算；如果频繁 `on/off`，这套取舍未必合适。
 
-## 1) 核心原则：Emit 热路径零分配
+## 基本取舍
 
-Eventure 把性能优化的重心放在 “高频 emit / 低频注册与移除” 的典型使用形态上：
+监听器数组使用 copy-on-write：
 
-- `emit()` 不会为了做 “触发时的快照” 去 `slice()` 复制监听器数组。
-- 代价被前移到 `on()` / `off()`：注册/移除时复制数组（Copy-on-Write）。
+- 注册和移除监听器时创建新数组；
+- `emit()` 读取当前数组引用，不执行 `slice()`；
+- 监听器在触发过程中新增或移除，不影响当前这次触发。
 
-这让触发频率很高时，GC 压力明显更低，也能避免 `slice()` 带来的线性拷贝。
+也就是说，写入路径多付一点成本，触发路径少做分配。
 
-对应实现：
+## 快照语义
 
-- 监听器数组的 Copy-on-Write：`src/utils.ts`（`appendListenerCopy` / `prependListenerCopy` / `insertListenerCopy` / `copyWithoutIndex`）
-- 触发读取不可变快照：`src/eventified.ts` 的 `emit()` / `src/channel.ts` 的 `emit()`
+触发过程中修改监听器时，当前遍历集合不会变化。可以把语义理解成这样：
 
-## 2) 正确性来源：不可变快照语义
+```ts
+const snapshot = listeners[event]
+for (let i = 0; i < snapshot.length; i++) {
+	snapshot[i](...args)
+}
+```
 
-JS 事件库里常见的坑是：在 listener 执行过程中如果新增/移除 listener，当前这次 emit 应该怎么遍历？
+实际实现会针对常见参数数量做分支，并避免不必要的复制；语义仍然是“当前 emit 只遍历开始时读到的数组”。
 
-Eventure 的选择是：
+相关实现：
 
-- 每次 `on/off/onAt/...` 都产生新的数组实例；
-- `emit()` 始终遍历当次读取到的数组引用（快照）。
+- copy-on-write 工具：[src/utils.ts](./src/utils.ts)
+- 命名事件触发：[src/eventified.ts](./src/eventified.ts)
+- 单事件通道触发：[src/channel.ts](./src/channel.ts)
 
-这样可以保证 “当前 emit 的遍历集合” 不会因为内部代码动态修改而发生漂移；同时也避免在每次 emit 里为了快照再 `slice()`。
+## 热路径策略
 
-## 3) 降低开销的小但实用点
+触发路径上还有几处小优化：
 
-这些不是 “魔法”，而是偏工程化的低成本收益点：
+- `emit()` 对 0 到 4 个参数使用专门分支；
+- 监听器数组写入使用手写 copy，避免 `splice()` 和 spread；
+- listener 包装策略在构造时预绑定；
+- async generator 顺序执行，调用方可通过迭代控制中断。
 
-- **0~4 参数的专门分支**：`emit()` 用 `switch(args.length)` 走手写调用路径，避免热路径频繁走 `(...args)` 的慢路径。
-- **避免 `splice/spread` 的多态开销**：listener 数组写入用手写 copy，尽量保持引擎更容易优化的形态。
-- **包装器复用**：构造时通过 `createWrapHelper` 预绑定策略对象，注册时避免重复创建配置对象。
+这些优化只服务于 dispatch，不改变公开 API 的语义。
 
-## 4) Benchmark 的口径与公平性（tinybench）
+## Benchmark 口径
 
-`tinybench/onlyEmit.ts` 里做了几件事情来让结果更接近 “库本身的 emit 能力”，而不是测试框架/Promise 收集的能力：
+Benchmark 源码：[tinybench/onlyEmit.ts](https://github.com/Kokoro-js/Eventure/blob/main/tinybench/onlyEmit.ts)。
 
-- 每个 sample 内部做 `RUNS(=1e5)` 次 `emit`，尽量摊薄 tinybench 本身的调度开销。
-- sync 场景注册 **2 个 listener**，避免某些库在 “单 listener” 上的特殊快路径造成误导。
-- async 场景用 “微任务 + barrier” 等待所有异步完成，而不是把 10^5 个 Promise 全部存到数组里再 `Promise.all`（后者会把大量内存分配/数组扩容/GC 噪声混进来）。
-- 为了对齐“其他库默认不会帮你兜底捕获异步 rejection”，benchmark 里对 Eventure 使用 `catchPromiseError: false`；这更像在测 “最接近其他库默认行为时的纯 emit 性能”。
+- 每个 sample 内部执行 `RUNS = 100_000` 次 emit；
+- sync 场景注册两个 listener；
+- async 场景使用微任务 barrier，不收集 `100_000` 个 Promise 再 `Promise.all`；
+- Eventure 在 benchmark 中使用 `catchPromiseError: false`，以对齐对比库的默认行为；
+- 每轮执行后校验 listener 累计调用结果，避免 benchmark 只测到空转；
+- console 表格展示 tinybench 原始 latency，PR markdown 展示每秒 emit 数、误差、样本数和由吞吐反推的单次 emit 延迟；
+- PR CI 在同一个 tinybench 进程里同时加载 base commit 与 PR 的 `dist/index.mjs`，并把 EventEmitter3、EventEmitter2、mitt 作为同机参考线；参考库版本会写入 markdown 方便复现，但不参与回归判断；
+- paired benchmark 使用 `base -> PR -> controls -> PR -> base` 的镜像任务位置，报告里聚合两次 Eventure base/PR 结果，降低固定执行顺序带来的偏差；
+- paired benchmark 只比较同一轮里的 Eventure base 与 Eventure PR，外部库不参与版本或回归对比；markdown 会写入 GitHub step summary/output，不再落盘两份 JSON 后二次 compare。
 
-你可以通过环境变量调整测量时间（更长更稳，但 CI 会更慢）：
+可通过环境变量调整测试时间：
 
 - `BENCH_TIME_SYNC_MS`
 - `BENCH_TIME_ASYNC_MS`
+- `BENCH_EVENTURE_IMPORT`
+- `BENCH_EVENTURE_BASELINE_IMPORT`
+- `BENCH_EVENTURE_TARGET_IMPORT`
+- `BENCH_MARKDOWN_PATH`
+- `BENCH_GITHUB_OUTPUT_NAME`
 
-## 5) 适用/不适用场景
+时间越长，噪声越低；CI 耗时也会增加。
 
-更适合：
+## 什么时候合适
 
-- 高频 `emit`（热路径）且 listener 数量适中；
-- 注册/移除相对低频；
-- 关注触发时的稳定性（快照语义）。
+更合适：
 
-不那么适合：
+- 高频触发；
+- listener 数量小到中等；
+- 注册和移除不在热路径；
+- 需要稳定快照语义。
 
-- 极高频的 `on/off`（每次都会产生新数组，写入成本更高）；
-- 强依赖 “边遍历边修改当前遍历集合” 的非快照语义（Eventure 不是这种语义）。
+不太合适：
 
+- `on/off` 与 `emit` 同样高频；
+- 依赖“遍历过程中修改当前遍历集合”的语义；
+- 需要完全模拟 Node 或浏览器内置事件系统的兼容行为。
