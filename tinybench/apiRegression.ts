@@ -1,28 +1,25 @@
-import { appendFile, mkdir } from 'node:fs/promises'
-import { arch, cpus, platform } from 'node:os'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { Bench, formatNumber } from 'tinybench'
 
 import {
-	Bench,
-	type Task,
-	type TaskResultWithStatistics,
-	formatNumber,
-} from 'tinybench'
+	readBenchTime,
+	readImportArgs,
+	renderNumber,
+	renderPercent,
+	renderRuntime,
+	resolveImport,
+	resultWithStatistics,
+	writeGitHubMarkdown,
+} from './benchUtils'
 
 const NAME = 'Eventure'
 const PAYLOAD = { msg: 'hello' }
-const TIME_MS = Number(process.env.BENCH_TIME_API_MS ?? 1000)
-const EVENTURE_IMPORT = process.env.BENCH_EVENTURE_IMPORT ?? '../dist/index.mjs'
-const EVENTURE_BASELINE_IMPORT = process.env.BENCH_EVENTURE_BASELINE_IMPORT
-const EVENTURE_TARGET_IMPORT = process.env.BENCH_EVENTURE_TARGET_IMPORT
-const MARKDOWN_PATH = process.env.BENCH_MARKDOWN_PATH
-const GITHUB_OUTPUT_NAME = process.env.BENCH_GITHUB_OUTPUT_NAME
-const FAIL_ON_REGRESSION = process.env.BENCH_FAIL_ON_REGRESSION === '1'
-const REGRESSION_THRESHOLD_PCT = Number(
-	process.env.BENCH_REGRESSION_THRESHOLD_PCT ?? 8,
-)
+const TIME_MS = readBenchTime()
+const REGRESSION_THRESHOLD_PCT = 8
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const eventureImports = readImportArgs('./tinybench/apiRegression.ts')
 
 type EventureInstance = {
 	on(event: string, listener: (...args: any[]) => unknown): () => void
@@ -54,9 +51,6 @@ type EventureModule = {
 	Eventure: EventureConstructor
 	EvtChannel: ChannelConstructor
 }
-type CompletedResult = TaskResultWithStatistics & {
-	state: 'completed' | 'aborted-with-statistics'
-}
 type Candidate = {
 	label: string
 	createEventure: () => EventureInstance
@@ -74,29 +68,15 @@ type ApiCase = {
 	setup: (candidate: Candidate) => Harness
 }
 
-if (
-	(EVENTURE_BASELINE_IMPORT === undefined) !==
-	(EVENTURE_TARGET_IMPORT === undefined)
-) {
-	throw new Error(
-		'BENCH_EVENTURE_BASELINE_IMPORT and BENCH_EVENTURE_TARGET_IMPORT must be set together',
-	)
-}
-
-const resolveImport = (specifier: string) =>
-	pathToFileURL(resolve(__dirname, specifier)).href
-
-const importEventure = async (specifier: string) =>
-	(await import(resolveImport(specifier))) as EventureModule
+const importEventure = async (specifier: string, baseDir?: string) =>
+	(await import(resolveImport(specifier, baseDir))) as EventureModule
 
 const eventureCandidates = await (async () => {
-	if (
-		EVENTURE_BASELINE_IMPORT !== undefined &&
-		EVENTURE_TARGET_IMPORT !== undefined
-	) {
+	if (eventureImports.length === 2) {
+		const [baselineImport, targetImport] = eventureImports
 		const [base, target] = await Promise.all([
-			importEventure(EVENTURE_BASELINE_IMPORT),
-			importEventure(EVENTURE_TARGET_IMPORT),
+			importEventure(baselineImport),
+			importEventure(targetImport),
 		])
 		return [
 			{
@@ -113,7 +93,10 @@ const eventureCandidates = await (async () => {
 		] satisfies Candidate[]
 	}
 
-	const mod = await importEventure(EVENTURE_IMPORT)
+	const mod =
+		eventureImports.length === 1
+			? await importEventure(eventureImports[0])
+			: await importEventure('../dist/index.mjs', __dirname)
 	return [
 		{
 			label: NAME,
@@ -126,16 +109,24 @@ const eventureCandidates = await (async () => {
 const pairedCandidates =
 	eventureCandidates.length === 2
 		? [
-				eventureCandidates[0]!,
-				eventureCandidates[1]!,
+				{
+					...eventureCandidates[0]!,
+					label: `${eventureCandidates[0]!.label} warmup`,
+				},
 				{
 					...eventureCandidates[1]!,
-					label: `${eventureCandidates[1]!.label} mirror`,
+					label: `${eventureCandidates[1]!.label} warmup`,
+				},
+				{
+					...eventureCandidates[1]!,
+					label: `${eventureCandidates[1]!.label} warmup mirror`,
 				},
 				{
 					...eventureCandidates[0]!,
-					label: `${eventureCandidates[0]!.label} mirror`,
+					label: `${eventureCandidates[0]!.label} warmup mirror`,
 				},
+				eventureCandidates[0]!,
+				eventureCandidates[1]!,
 			]
 		: eventureCandidates
 
@@ -427,20 +418,9 @@ const cases: ApiCase[] = [
 
 let checksum = 0
 
-const resultWithStatistics = (task: Task): CompletedResult => {
-	const { result } = task
-	if (
-		result.state !== 'completed' &&
-		result.state !== 'aborted-with-statistics'
-	) {
-		throw new Error(`Benchmark task "${task.name}" ended as ${result.state}`)
-	}
-	return result
-}
-
 const caseNameFromTask = (taskName: string) =>
 	taskName
-		.replace(/^Eventure (?:base|PR)(?: mirror)? /, '')
+		.replace(/^Eventure (?:base|PR)(?: warmup(?: mirror)?| mirror)? /, '')
 		.replace(/^Eventure /, '')
 
 const labelFromTask = (taskName: string) =>
@@ -478,8 +458,8 @@ const createBench = () => {
 }
 
 const addTasks = (bench: Bench) => {
-	for (const candidate of pairedCandidates) {
-		for (const apiCase of cases) {
+	for (const apiCase of cases) {
+		for (const candidate of pairedCandidates) {
 			let harness!: Harness
 			bench.add(`${candidate.label} ${apiCase.name}`, () => harness.run(), {
 				async: apiCase.async,
@@ -513,6 +493,7 @@ const benchRows = (bench: Bench) => {
 		return {
 			caseName: caseNameFromTask(task.name),
 			label: labelFromTask(task.name),
+			report: !task.name.match(/^Eventure (?:base|PR) warmup(?: mirror)? /),
 			hz,
 			rme: result.throughput.rme,
 			samples: result.latency.samplesCount,
@@ -522,7 +503,7 @@ const benchRows = (bench: Bench) => {
 
 const summarizeRows = (rows: ReturnType<typeof benchRows>) => {
 	const groups = new Map<string, typeof rows>()
-	for (const row of rows) {
+	for (const row of rows.filter((row) => row.report)) {
 		const key = `${row.label}\0${row.caseName}`
 		const group = groups.get(key)
 		if (group === undefined) {
@@ -532,24 +513,23 @@ const summarizeRows = (rows: ReturnType<typeof benchRows>) => {
 		}
 	}
 
-	return [...groups.values()].map((group) => ({
-		caseName: group[0]!.caseName,
-		label: group[0]!.label,
-		hz: group.reduce((sum, row) => sum + row.hz, 0) / group.length,
-		rme: Math.max(...group.map((row) => row.rme)),
-		samples: group.reduce((sum, row) => sum + row.samples, 0),
-	}))
+	return [...groups.values()].map((group) => {
+		const sortedHz = group.map((row) => row.hz).sort((a, b) => a - b)
+		const middle = Math.floor(sortedHz.length / 2)
+		const hz =
+			sortedHz.length % 2 === 0
+				? (sortedHz[middle - 1]! + sortedHz[middle]!) / 2
+				: sortedHz[middle]!
+
+		return {
+			caseName: group[0]!.caseName,
+			label: group[0]!.label,
+			hz,
+			rme: Math.max(...group.map((row) => row.rme)),
+			samples: group.reduce((sum, row) => sum + row.samples, 0),
+		}
+	})
 }
-
-const renderPercent = (value: number | null | undefined) =>
-	value === null || value === undefined
-		? '-'
-		: `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
-
-const renderNumber = (value: number) => value.toFixed(2)
-
-const renderRuntime = (bench: Bench) =>
-	`${bench.runtime} ${bench.runtimeVersion}, ${platform()}/${arch()}, ${cpus()[0]?.model ?? 'unknown'}, timer ${bench.timestampProvider.name}`
 
 const renderMarkdown = (
 	rows: ReturnType<typeof benchRows>,
@@ -567,14 +547,15 @@ const renderMarkdown = (
 			.map((row) => [row.caseName, row]),
 	)
 	const paired = baseRows.size > 0 && prRows.size > 0
-	let hasRegression = false
+	const ratios: number[] = []
+	const caseRegressions: string[] = []
 
 	const lines = [
 		'## Eventure API Performance',
 		`Runtime: ${renderRuntime(bench)}`,
 		`Ops/sample vary by case; checksum: \`${checksum}\``,
 		paired
-			? 'Rows aggregate mirrored base/PR task positions and compare Eventure only.'
+			? 'Rows compare the steady-state base/PR tasks after mirrored warmup tasks.'
 			: 'Single-version smoke run.',
 		'',
 	]
@@ -593,7 +574,8 @@ const renderMarkdown = (
 			const significant =
 				delta < 0 &&
 				Math.abs(delta) > REGRESSION_THRESHOLD_PCT + base.rme + pr.rme
-			if (significant) hasRegression = true
+			ratios.push(pr.hz / base.hz)
+			if (significant) caseRegressions.push(apiCase.name)
 			lines.push(
 				`| ${apiCase.name} | ${renderNumber(base.hz / 100_000)} | ${renderNumber(pr.hz / 100_000)} | ${renderPercent(delta)} | ${rme.toFixed(2)}% | ${base.samples + pr.samples} | ${(1_000_000_000 / pr.hz).toFixed(2)} |`,
 			)
@@ -610,10 +592,30 @@ const renderMarkdown = (
 		}
 	}
 
+	const geomeanDelta =
+		ratios.length === 0
+			? null
+			: (Math.exp(
+					ratios.reduce((sum, ratio) => sum + Math.log(ratio), 0) /
+						ratios.length,
+				) -
+					1) *
+				100
+	const hasRegression =
+		geomeanDelta !== null && geomeanDelta < -REGRESSION_THRESHOLD_PCT
+
 	lines.push('')
+	if (geomeanDelta !== null) {
+		lines.push(`- API geomean delta: ${renderPercent(geomeanDelta)}.`)
+	}
+	if (caseRegressions.length > 0) {
+		lines.push(
+			`- Potential case regressions: ${caseRegressions.map((name) => `\`${name}\``).join(', ')}.`,
+		)
+	}
 	if (hasRegression) {
 		lines.push(
-			`- Significant regression detected. Threshold: ${REGRESSION_THRESHOLD_PCT.toFixed(2)}% plus base/PR RME.`,
+			`- Significant API regression detected. Threshold: -${REGRESSION_THRESHOLD_PCT.toFixed(2)}% geomean.`,
 		)
 	} else {
 		lines.push('- No significant regressions detected.')
@@ -633,32 +635,8 @@ const rows = benchRows(bench)
 const { markdown, hasRegression } = renderMarkdown(rows, bench)
 console.log(markdown)
 
-if (MARKDOWN_PATH !== undefined) {
-	const resolvedMarkdownPath = resolve(__dirname, MARKDOWN_PATH)
-	await mkdir(dirname(resolvedMarkdownPath), { recursive: true })
-	await Bun.write(resolvedMarkdownPath, markdown)
-	console.log(`Benchmark markdown written to ${resolvedMarkdownPath}`)
-}
+await writeGitHubMarkdown(markdown)
 
-if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
-	await appendFile(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`, 'utf8')
-}
-
-if (
-	process.env.GITHUB_OUTPUT !== undefined &&
-	GITHUB_OUTPUT_NAME !== undefined
-) {
-	let delimiter = 'BENCHMARK_MARKDOWN'
-	while (markdown.includes(delimiter)) {
-		delimiter = `${delimiter}_END`
-	}
-	await appendFile(
-		process.env.GITHUB_OUTPUT,
-		`${GITHUB_OUTPUT_NAME}<<${delimiter}\n${markdown}\n${delimiter}\n`,
-		'utf8',
-	)
-}
-
-if (hasRegression && FAIL_ON_REGRESSION) {
+if (hasRegression && eventureImports.length === 2) {
 	process.exitCode = 1
 }

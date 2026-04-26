@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,18 +19,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 'lts/*'
-
-      - name: Set up Bun.js
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 'latest'
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - name: Prepare package
+        uses: ./.github/actions/prepare-package
 
       - name: Verify
         run: |
@@ -43,27 +37,22 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+      issues: write
     steps:
       - name: Checkout PR code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Bun.js
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 'latest'
+      - name: Prepare PR package
+        uses: ./.github/actions/prepare-package
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build distribution
+      - name: Build PR distribution
         run: bun run build
 
-      - name: Install benchmark dependencies
-        working-directory: tinybench
-        run: bun install --frozen-lockfile
+      - name: Prepare benchmark package
+        uses: ./.github/actions/prepare-package
+        with:
+          working-directory: tinybench
+          setup-runtime: 'false'
 
       - name: Checkout baseline
         uses: actions/checkout@v4
@@ -71,26 +60,29 @@ jobs:
           repository: ${{ github.event.pull_request.base.repo.full_name }}
           ref: ${{ github.event.pull_request.base.sha }}
           path: baseline
-          fetch-depth: 0
 
-      - name: Install dependencies (baseline)
-        working-directory: baseline
-        run: bun install --no-save
+      - name: Prepare baseline package
+        uses: ./.github/actions/prepare-package
+        with:
+          working-directory: baseline
+          setup-runtime: 'false'
+          install-args: '--no-save'
 
-      - name: Build distribution (baseline)
+      - name: Build baseline distribution
         working-directory: baseline
         run: bun run build
 
-      - name: Run paired benchmarks
-        id: benchmark
-        env:
-          BENCH_EVENTURE_BASELINE_IMPORT: ${{ github.workspace }}/baseline/dist/index.mjs
-          BENCH_EVENTURE_TARGET_IMPORT: ${{ github.workspace }}/dist/index.mjs
-          BENCH_GITHUB_OUTPUT_NAME: markdown
-        run: bun ./tinybench/onlyEmit.ts
+      - name: Run API regression benchmark
+        id: api_benchmark
+        continue-on-error: true
+        run: bun ./tinybench/apiRegression.ts ./baseline/dist/index.mjs ./dist/index.mjs
 
-      - name: Comment on PR with benchmark delta
-        if: github.event_name == 'pull_request'
+      - name: Run emit reference benchmark
+        id: compare_benchmark
+        run: bun ./tinybench/onlyEmit.ts ./baseline/dist/index.mjs ./dist/index.mjs
+
+      - name: Comment on PR with benchmark results
+        if: always()
         continue-on-error: true
         uses: actions/github-script@v7
         with:
@@ -101,7 +93,15 @@ jobs:
               issue_number: context.issue.number,
             })
             const marker = '<!-- benchmark-report -->'
-            const markdown = ${{ toJSON(steps.benchmark.outputs.markdown) }}
+            const apiMarkdown = ${{ toJSON(steps.api_benchmark.outputs.markdown) }}
+            const compareMarkdown = ${{ toJSON(steps.compare_benchmark.outputs.markdown) }}
+            const sections = []
+            if (apiMarkdown) sections.push(apiMarkdown)
+            else sections.push('## Eventure API Performance\n\nAPI regression benchmark did not produce markdown output.')
+            sections.push('---')
+            if (compareMarkdown) sections.push(compareMarkdown)
+            else sections.push('## Emit Reference Benchmark\n\nEmit reference benchmark did not produce markdown output.')
+            const markdown = sections.join('\n\n')
             const body = `${marker}\n${markdown}`
             const existing = comments.find((c) => c.body?.startsWith(marker))
             if (existing) {
@@ -119,3 +119,7 @@ jobs:
                 body,
               })
             }
+
+      - name: Fail on API performance regression
+        if: steps.api_benchmark.outcome == 'failure'
+        run: exit 1

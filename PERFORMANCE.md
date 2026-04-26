@@ -52,26 +52,20 @@ Benchmark 源码：[tinybench/onlyEmit.ts](https://github.com/Kokoro-js/Eventure
 - Eventure 在 benchmark 中使用 `catchPromiseError: false`，以对齐对比库的默认行为；
 - 每轮执行后校验 listener 累计调用结果，避免 benchmark 只测到空转；
 - console 表格展示 tinybench 原始 latency，PR markdown 展示每秒 emit 数、误差、样本数和由吞吐反推的单次 emit 延迟；
-- PR CI 在同一个 tinybench 进程里同时加载 base commit 与 PR 的 `dist/index.mjs`，并把 EventEmitter3、EventEmitter2、mitt 作为同机参考线；参考库版本会写入 markdown 方便复现，但不参与回归判断；
-- paired benchmark 使用 `base -> PR -> controls -> PR -> base` 的镜像任务位置，报告里聚合两次 Eventure base/PR 结果，降低固定执行顺序带来的偏差；
-- paired benchmark 只比较同一轮里的 Eventure base 与 Eventure PR，外部库不参与版本或回归对比；markdown 会写入 GitHub step summary/output，不再落盘两份 JSON 后二次 compare。
+- PR CI 通过命令参数在同一个 tinybench 进程里同时加载 base commit 与 PR 的 `dist/index.mjs`，并把 EventEmitter3、EventEmitter2、mitt 作为同机参考线；参考库版本会写入 markdown 方便复现，但不参与回归判断；
+- emit reference 使用 `base -> PR -> controls -> PR -> base` 的镜像任务位置；API regression 按 case 先执行 base/PR 镜像 warmup，再比较稳态 base/PR 任务，降低固定执行顺序和预热阶段带来的偏差；
+- paired benchmark 只比较同一轮里的 Eventure base 与 Eventure PR，外部库不参与版本或回归对比；API regression 会列出单 case 的 potential regression，但 CI 只用 API geomean 作为失败 gate；markdown 会写入 GitHub step summary/output，不再落盘两份 JSON 后二次 compare；
 - `bench:onlyEmit` / `bench:compare` 保留为 emit 参考线，对比 Eventure 与 EventEmitter3、EventEmitter2、mitt；
 - `bench:api` 是 Eventure-only PR 回归 benchmark，覆盖命名事件、单事件通道、emit 参数形态、listener 数量、on/off churn、emitAll、emitSettled、fire、waterfall 和 waitFor；它不和外部库比较，专门看 base/PR 的 API 性能变化。
 
-可通过环境变量调整测试时间：
+本地常用命令：
 
-- `BENCH_TIME_SYNC_MS`
-- `BENCH_TIME_ASYNC_MS`
-- `BENCH_TIME_API_MS`
-- `BENCH_FAIL_ON_REGRESSION`
-- `BENCH_REGRESSION_THRESHOLD_PCT`
-- `BENCH_EVENTURE_IMPORT`
-- `BENCH_EVENTURE_BASELINE_IMPORT`
-- `BENCH_EVENTURE_TARGET_IMPORT`
-- `BENCH_MARKDOWN_PATH`
-- `BENCH_GITHUB_OUTPUT_NAME`
+- `bun run bench:compare`：默认读取 `dist/index.mjs`；
+- `bun run bench:api`：默认读取 `dist/index.mjs`；
+- `bun ./tinybench/apiRegression.ts ./baseline/dist/index.mjs ./dist/index.mjs`：base/PR API 回归检测；
+- `bun ./tinybench/onlyEmit.ts ./baseline/dist/index.mjs ./dist/index.mjs`：base/PR emit 参考对比。
 
-时间越长，噪声越低；CI 耗时也会增加。
+可通过 `BENCH_TIME_MS` 调整每个 task 的测试时间。时间越长，噪声越低；CI 耗时也会增加。很短的时间适合 smoke，不适合判断回归。
 
 ## 什么时候合适
 

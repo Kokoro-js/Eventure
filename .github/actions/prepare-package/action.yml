@@ -1,0 +1,55 @@
+name: Prepare package
+description: Set up JavaScript runtime and install package dependencies.
+
+inputs:
+  working-directory:
+    description: Directory that contains the package to prepare.
+    required: false
+    default: .
+  setup-runtime:
+    description: Whether to set up Node.js and Bun before installing dependencies.
+    required: false
+    default: 'true'
+  node-version:
+    description: Node.js version passed to actions/setup-node.
+    required: false
+    default: 'lts/*'
+  bun-version:
+    description: Bun version passed to oven-sh/setup-bun.
+    required: false
+    default: latest
+  registry-url:
+    description: Optional npm registry URL for publish jobs.
+    required: false
+    default: ''
+  install-args:
+    description: Arguments passed to bun install.
+    required: false
+    default: '--frozen-lockfile'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      if: ${{ inputs.setup-runtime == 'true' && inputs.registry-url == '' }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Set up Node.js for npm publish
+      if: ${{ inputs.setup-runtime == 'true' && inputs.registry-url != '' }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        registry-url: ${{ inputs.registry-url }}
+
+    - name: Set up Bun.js
+      if: ${{ inputs.setup-runtime == 'true' }}
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: bun install ${{ inputs.install-args }}

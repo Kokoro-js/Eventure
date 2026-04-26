@@ -1,18 +1,22 @@
-import { appendFile, mkdir } from 'node:fs/promises'
-import { arch, cpus, platform } from 'node:os'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import EventEmitter2 from 'eventemitter2'
 import EventEmitter3 from 'eventemitter3'
 import mitt from 'mitt'
-import {
-	Bench,
-	type Task,
-	type TaskResultWithStatistics,
-	formatNumber,
-} from 'tinybench'
+import { Bench, formatNumber } from 'tinybench'
 
+import {
+	readBenchTime,
+	readImportArgs,
+	renderNumber,
+	renderPercent,
+	renderRuntime,
+	resolveImport,
+	resultWithStatistics,
+	writeGitHubMarkdown,
+	type CompletedResult,
+} from './benchUtils'
 import pkg from './package.json'
 
 const NAME = 'Eventure'
@@ -21,14 +25,10 @@ const PAYLOAD = { msg: 'hello' }
 const RUNS = 100_000
 const LISTENERS = 2
 const EXPECTED_COUNT = RUNS * LISTENERS * PAYLOAD.msg.length
-const TIME_SYNC_MS = Number(process.env.BENCH_TIME_SYNC_MS ?? 1000)
-const TIME_ASYNC_MS = Number(process.env.BENCH_TIME_ASYNC_MS ?? 2000)
-const EVENTURE_IMPORT = process.env.BENCH_EVENTURE_IMPORT ?? '../dist/index.mjs'
-const EVENTURE_BASELINE_IMPORT = process.env.BENCH_EVENTURE_BASELINE_IMPORT
-const EVENTURE_TARGET_IMPORT = process.env.BENCH_EVENTURE_TARGET_IMPORT
-const MARKDOWN_PATH = process.env.BENCH_MARKDOWN_PATH
-const GITHUB_OUTPUT_NAME = process.env.BENCH_GITHUB_OUTPUT_NAME
+const TIME_MS = readBenchTime()
+const ASYNC_TIME_MS = TIME_MS * 2
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const eventureImports = readImportArgs('./tinybench/onlyEmit.ts')
 
 type Payload = typeof PAYLOAD
 type Listener = (payload: Payload) => unknown
@@ -39,41 +39,24 @@ type Emitter = {
 type EventureConstructor = new (options?: {
 	catchPromiseError?: boolean
 }) => Emitter
-type CompletedResult = TaskResultWithStatistics & {
-	state: 'completed' | 'aborted-with-statistics'
-}
 type Candidate = {
 	label: string
 	create: () => Emitter
 }
 
-if (
-	(EVENTURE_BASELINE_IMPORT === undefined) !==
-	(EVENTURE_TARGET_IMPORT === undefined)
-) {
-	throw new Error(
-		'BENCH_EVENTURE_BASELINE_IMPORT and BENCH_EVENTURE_TARGET_IMPORT must be set together',
-	)
-}
-
-const resolveImport = (specifier: string) =>
-	pathToFileURL(resolve(__dirname, specifier)).href
-
-const importEventure = async (specifier: string) => {
-	const mod = (await import(resolveImport(specifier))) as {
+const importEventure = async (specifier: string, baseDir?: string) => {
+	const mod = (await import(resolveImport(specifier, baseDir))) as {
 		Eventure: EventureConstructor
 	}
 	return mod.Eventure
 }
 
 const eventureCandidates = await (async () => {
-	if (
-		EVENTURE_BASELINE_IMPORT !== undefined &&
-		EVENTURE_TARGET_IMPORT !== undefined
-	) {
+	if (eventureImports.length === 2) {
+		const [baselineImport, targetImport] = eventureImports
 		const [BaselineEventure, TargetEventure] = await Promise.all([
-			importEventure(EVENTURE_BASELINE_IMPORT),
-			importEventure(EVENTURE_TARGET_IMPORT),
+			importEventure(baselineImport),
+			importEventure(targetImport),
 		])
 		return [
 			{
@@ -87,7 +70,10 @@ const eventureCandidates = await (async () => {
 		] satisfies Candidate[]
 	}
 
-	const Eventure = await importEventure(EVENTURE_IMPORT)
+	const Eventure =
+		eventureImports.length === 1
+			? await importEventure(eventureImports[0])
+			: await importEventure('../dist/index.mjs', __dirname)
 	return [
 		{
 			label: NAME,
@@ -154,17 +140,6 @@ const reportLabel = (taskName: string) =>
 	taskName
 		.replace(/ mirror(?= (?:sync|async)$)/, '')
 		.replace(/ (?:sync|async)$/, '')
-
-const resultWithStatistics = (task: Task): CompletedResult => {
-	const { result } = task
-	if (
-		result.state !== 'completed' &&
-		result.state !== 'aborted-with-statistics'
-	) {
-		throw new Error(`Benchmark task "${task.name}" ended as ${result.state}`)
-	}
-	return result
-}
 
 const assertCount = (label: string, count: number) => {
 	if (count !== EXPECTED_COUNT) {
@@ -347,16 +322,6 @@ const runBench = async (bench: Bench) => {
 	return benchRows(bench)
 }
 
-const renderPercent = (value: number | null | undefined) =>
-	value === null || value === undefined
-		? '-'
-		: `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
-
-const renderNumber = (value: number) => value.toFixed(2)
-
-const renderRuntime = (bench: Bench) =>
-	`${bench.runtime} ${bench.runtimeVersion}, ${platform()}/${arch()}, ${cpus()[0]?.model ?? 'unknown'}, timer ${bench.timestampProvider.name}`
-
 const markdownTable = (rows: ReturnType<typeof benchRows>) => {
 	const summarizedRows = reportRows(rows)
 	const eventureBase = summarizedRows.find(
@@ -442,39 +407,15 @@ const renderMarkdown = (
 	].join('\n')
 }
 
-const benchSync = createBench(`${title} - sync`, TIME_SYNC_MS)
+const benchSync = createBench(`${title} - sync`, TIME_MS)
 addSyncTasks(benchSync)
 const syncRows = await runBench(benchSync)
 
-const benchAsync = createBench(`${title} - async`, TIME_ASYNC_MS)
+const benchAsync = createBench(`${title} - async`, ASYNC_TIME_MS)
 addAsyncTasks(benchAsync)
 const asyncRows = await runBench(benchAsync)
 
 const markdown = renderMarkdown(syncRows, asyncRows, benchSync)
 console.log(markdown)
 
-if (MARKDOWN_PATH !== undefined) {
-	const resolvedMarkdownPath = resolve(__dirname, MARKDOWN_PATH)
-	await mkdir(dirname(resolvedMarkdownPath), { recursive: true })
-	await Bun.write(resolvedMarkdownPath, markdown)
-	console.log(`Benchmark markdown written to ${resolvedMarkdownPath}`)
-}
-
-if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
-	await appendFile(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`, 'utf8')
-}
-
-if (
-	process.env.GITHUB_OUTPUT !== undefined &&
-	GITHUB_OUTPUT_NAME !== undefined
-) {
-	let delimiter = 'BENCHMARK_MARKDOWN'
-	while (markdown.includes(delimiter)) {
-		delimiter = `${delimiter}_END`
-	}
-	await appendFile(
-		process.env.GITHUB_OUTPUT,
-		`${GITHUB_OUTPUT_NAME}<<${delimiter}\n${markdown}\n${delimiter}\n`,
-		'utf8',
-	)
-}
+await writeGitHubMarkdown(markdown)
