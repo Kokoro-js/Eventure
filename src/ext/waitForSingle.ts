@@ -20,6 +20,16 @@ export interface WaitForSingleOptions<D extends EventDescriptor> {
 	filter?: (...args: EventArgs<D>) => boolean
 }
 
+export function assertValidWaitForTimeout(timeout: number | undefined): void {
+	if (timeout === undefined) return
+	if (!Number.isFinite(timeout) || timeout < 0) {
+		throw new RangeError('timeout must be a non-negative finite number')
+	}
+}
+
+const normalizeRejection = (reason: unknown) =>
+	reason instanceof Error ? reason : new Error(String(reason))
+
 const waitForMessage = (
 	label: string | undefined,
 	action: 'timeout' | 'aborted' | 'cancelled',
@@ -35,9 +45,12 @@ const waitForMessage = (
 export function waitForSingle<D extends EventDescriptor>(
 	wrap: WrapFn,
 	register: RegisterWaitListener<D>,
-	{ timeout, signal, filter }: WaitForSingleOptions<D> = {},
+	options: WaitForSingleOptions<D> = {},
 	label?: string,
 ): CancellablePromise<EventArgs<D>> {
+	const { signal, filter } = options
+	const { timeout } = options
+	assertValidWaitForTimeout(timeout)
 	let offRef: Unsubscribe | null = null
 	let timer: ReturnType<typeof setTimeout> | null = null
 	let abortListener: (() => void) | null = null
@@ -88,6 +101,7 @@ export function waitForSingle<D extends EventDescriptor>(
 
 		if (filter === undefined) {
 			const handler = wrap(((...args: EventArgs<D>) => {
+				if (settled) return
 				cleanup()
 				resolve(args)
 			}) as EventListener<D>)
@@ -96,7 +110,16 @@ export function waitForSingle<D extends EventDescriptor>(
 		}
 
 		const handler = wrap(((...args: EventArgs<D>) => {
-			if (!filter(...args)) return
+			if (settled) return
+			let matched: boolean
+			try {
+				matched = filter(...args)
+			} catch (error) {
+				cleanup()
+				reject(normalizeRejection(error))
+				return
+			}
+			if (!matched) return
 			cleanup()
 			resolve(args)
 		}) as EventListener<D>)

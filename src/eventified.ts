@@ -99,6 +99,8 @@ export type EventureWFResult<E extends IEventMap<E>, K extends WFKeys<E>> =
 
 export type { EventurePosition, EventureScope } from './eventureScope'
 
+const EMPTY_LISTENERS: readonly EventListener<any>[] = []
+
 export class Eventure<
 	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
 > {
@@ -116,8 +118,6 @@ export class Eventure<
 	}
 
 	private _logger: Logger
-	private _captureRejections: boolean
-	private _captureReturnedPromises: boolean
 	private _errorPolicy: ErrorPolicy
 	/** 预构建包装器，热路径零分配 */
 	private _wrap: <T extends (...args: any[]) => any>(listener: T) => T
@@ -129,20 +129,24 @@ export class Eventure<
 			for (const ev of options.preallocateEvents) this._listeners[ev] = []
 		}
 
-		this._captureRejections = options?.captureRejections ?? true
-		this._captureReturnedPromises = options?.captureReturnedPromises ?? false
+		const captureRejections = options?.captureRejections ?? true
+		const captureReturnedPromises = options?.captureReturnedPromises ?? false
 		this._errorPolicy = options?.errorPolicy ?? 'log'
 
 		this._wrap = createWrapHelper({
 			logger: this._logger,
-			captureRejections: this._captureRejections,
-			captureReturnedPromises: this._captureReturnedPromises,
+			captureRejections,
+			captureReturnedPromises,
 			errorPolicy: this._errorPolicy,
 		})
 	}
 
 	private _onSyncError(err: unknown): void {
 		onSyncError(err, this._errorPolicy, this._logger)
+	}
+
+	private _readListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
+		return (this._listeners[event] ?? EMPTY_LISTENERS) as EventListener<E[K]>[]
 	}
 
 	private _makeSubscription<K extends keyof E>(
@@ -471,9 +475,11 @@ export class Eventure<
 		)
 	}
 
-	public when<K extends keyof E>(
+	private _scope<K extends keyof E>(
 		event: K,
-		predicate: GuardPredicate<E[K]>,
+		posKind: PositionKind,
+		posValue: number | ((ctx: { count: number; event: K }) => number),
+		predicate?: GuardPredicate<E[K]>,
 	): EventureScope<E, K> {
 		const add = (
 			listener: EventListener<E[K]>,
@@ -494,10 +500,17 @@ export class Eventure<
 			)
 		return new EventureListenerScope(
 			add,
-			POS_BACK,
-			0,
+			posKind,
+			posValue,
 			predicate,
 		) as EventureScope<E, K>
+	}
+
+	public when<K extends keyof E>(
+		event: K,
+		predicate: GuardPredicate<E[K]>,
+	): EventureScope<E, K> {
+		return this._scope(event, POS_BACK, 0, predicate)
 	}
 
 	public at<K extends keyof E>(
@@ -505,29 +518,7 @@ export class Eventure<
 		position: EventurePosition<E, K>,
 	): EventureScope<E, K> {
 		const [encodedKind, encodedValue] = encodeListenerPosition(position)
-		const add = (
-			listener: EventListener<E[K]>,
-			times: number,
-			scopePosKind: PositionKind,
-			scopePosValue: number | ((ctx: { count: number; event: K }) => number),
-			scopePredicate?: GuardPredicate<E[K]>,
-			signal?: AbortSignal,
-		) =>
-			this._add(
-				event,
-				listener,
-				times,
-				scopePosKind,
-				scopePosValue,
-				scopePredicate,
-				signal,
-			)
-		return new EventureListenerScope(
-			add,
-			encodedKind,
-			encodedValue,
-			undefined,
-		) as EventureScope<E, K>
+		return this._scope(event, encodedKind, encodedValue)
 	}
 
 	public waitFor<K extends keyof E>(
@@ -547,7 +538,7 @@ export class Eventure<
 		event: K,
 		...args: EventArgs<E[K]>
 	): Generator<FireSyncRecord<E[K]>> {
-		return fireFromListeners(this.listenersUnsafe(event), args)
+		return fireFromListeners(this._readListeners(event), args)
 	}
 
 	public fireFrom<K extends keyof E>(
@@ -565,7 +556,7 @@ export class Eventure<
 		event: K,
 		...args: EventArgs<E[K]>
 	): AsyncGenerator<FireAsyncRecord<E[K]>> {
-		return fireAsyncFromListeners(this.listenersUnsafe(event), args)
+		return fireAsyncFromListeners(this._readListeners(event), args)
 	}
 
 	public fireAsyncFrom<K extends keyof E>(
@@ -588,7 +579,7 @@ export class Eventure<
 			: EventureSplit<E, K>['args']
 	): EventureWFResult<E, K>
 	public waterfall(event: any, ...args: any[]): WFResult<any> {
-		return runWaterfall(this.listenersUnsafe(event), args)
+		return runWaterfall(this._readListeners(event), args)
 	}
 
 	public waterfallFrom<K extends WFKeys<E>>(

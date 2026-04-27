@@ -76,7 +76,7 @@ events.waitFor('message', { timeout: 1000, filter: Boolean })
 - `many(event, times, listener, options?)`：命中指定次数后自动退订，`times` 必须是正整数。
 - `when(event, predicate)`：返回条件注册 scope，支持 `on`、`once`、`many`，也可以继续 `.at(...)` 组合。
 - `waitFor(event, options?)`：返回带 `cancel()` 方法的 Promise，resolve 值是事件参数 tuple。
-- `waitFor` 支持 `timeout`、`signal` 和 `filter`。
+- `waitFor` 支持 `timeout`、`signal` 和 `filter`；`timeout` 必须是非负有限数，`filter` 抛错时会 reject 并清理监听器。
 
 ### 触发
 

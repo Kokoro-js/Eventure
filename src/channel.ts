@@ -96,22 +96,20 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 	}
 
 	private _logger: Logger
-	private _captureRejections: boolean
-	private _captureReturnedPromises: boolean
 	private _errorPolicy: ErrorPolicy
 
 	private _wrap: <T extends (...args: any[]) => any>(listener: T) => T
 
 	constructor(options?: EvtChannelOptions<D>) {
 		this._logger = options?.logger ?? defaultLogger
-		this._captureRejections = options?.captureRejections ?? true
-		this._captureReturnedPromises = options?.captureReturnedPromises ?? false
+		const captureRejections = options?.captureRejections ?? true
+		const captureReturnedPromises = options?.captureReturnedPromises ?? false
 		this._errorPolicy = options?.errorPolicy ?? 'log'
 
 		this._wrap = createWrapHelper({
 			logger: this._logger,
-			captureRejections: this._captureRejections,
-			captureReturnedPromises: this._captureReturnedPromises,
+			captureRejections,
+			captureReturnedPromises,
 			errorPolicy: this._errorPolicy,
 		})
 	}
@@ -374,7 +372,11 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return this._add(listener, times, POS_BACK, 0, undefined, options?.signal)
 	}
 
-	public when(predicate: GuardPredicate<D>): EvtChannelScope<D> {
+	private _scope(
+		posKind: PositionKind,
+		posValue: number | ((ctx: { count: number }) => number),
+		predicate?: GuardPredicate<D>,
+	): EvtChannelScope<D> {
 		const add = (
 			listener: EventListener<D>,
 			times: number,
@@ -393,36 +395,19 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 			)
 		return new ChannelListenerScope(
 			add,
-			POS_BACK,
-			0,
+			posKind,
+			posValue,
 			predicate,
 		) as EvtChannelScope<D>
 	}
 
+	public when(predicate: GuardPredicate<D>): EvtChannelScope<D> {
+		return this._scope(POS_BACK, 0, predicate)
+	}
+
 	public at(position: EvtChannelPosition): EvtChannelScope<D> {
 		const [encodedKind, encodedValue] = encodeListenerPosition(position)
-		const add = (
-			listener: EventListener<D>,
-			times: number,
-			scopePosKind: PositionKind,
-			scopePosValue: number | ((ctx: { count: number }) => number),
-			scopePredicate?: GuardPredicate<D>,
-			signal?: AbortSignal,
-		) =>
-			this._add(
-				listener,
-				times,
-				scopePosKind,
-				scopePosValue,
-				scopePredicate,
-				signal,
-			)
-		return new ChannelListenerScope(
-			add,
-			encodedKind,
-			encodedValue,
-			undefined,
-		) as EvtChannelScope<D>
+		return this._scope(encodedKind, encodedValue)
 	}
 
 	public waitFor(
