@@ -39,7 +39,7 @@ describe('Eventure core', () => {
 		expect(calls).toEqual([1001])
 	})
 
-	it('off() can remove wrapped listeners (via ORIGFUNC mapping)', () => {
+	it('off() can remove wrapped listeners by original function reference', () => {
 		const asyncFn = async (_msg: string) => {
 			await Promise.resolve()
 			return
@@ -47,7 +47,6 @@ describe('Eventure core', () => {
 		emitter.on('asyncEvt', asyncFn)
 		expect(emitter.count('asyncEvt')).toBe(1)
 
-		// async listeners are wrapped, so off() can match by ORIGFUNC.
 		expect(emitter.off('asyncEvt', asyncFn)).toBe(true)
 		expect(emitter.count('asyncEvt')).toBe(0)
 	})
@@ -133,6 +132,38 @@ describe('Eventure core', () => {
 		}).not.toThrow()
 
 		// 等待内部 promise 完成（两次微任务以覆盖 async 返回值和 catch）
+		await Promise.resolve()
+		await Promise.resolve()
+		expect(errorSpy.mock.calls.length).toBe(1)
+	})
+
+	it('uses captureRejections to control async listener wrapping', () => {
+		const asyncListener = async () => {}
+
+		const captured = new Eventure({ logger: silentLogger })
+		captured.on('asyncEvt', asyncListener)
+		expect(captured.listenersUnsafe('asyncEvt')[0]).not.toBe(asyncListener)
+
+		const raw = new Eventure({
+			captureRejections: false,
+			logger: silentLogger,
+		})
+		raw.on('asyncEvt', asyncListener)
+		expect(raw.listenersUnsafe('asyncEvt')[0]).toBe(asyncListener)
+	})
+
+	it('uses captureReturnedPromises for non-async promise listeners', async () => {
+		const errorSpy = mock(() => {})
+		emitter = new Eventure({
+			captureReturnedPromises: true,
+			logger: { ...silentLogger, error: errorSpy },
+		})
+
+		const listener = () => Promise.reject(new Error('returned'))
+		emitter.on('asyncEvt', listener)
+		expect(emitter.listenersUnsafe('asyncEvt')[0]).not.toBe(listener)
+
+		emitter.emit('asyncEvt', 'oops')
 		await Promise.resolve()
 		await Promise.resolve()
 		expect(errorSpy.mock.calls.length).toBe(1)

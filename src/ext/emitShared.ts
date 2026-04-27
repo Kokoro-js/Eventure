@@ -1,3 +1,4 @@
+import { ORIGFUNC, isPromiseLike } from '../core/listener'
 import type {
 	EventArgs,
 	EventDescriptor,
@@ -5,7 +6,6 @@ import type {
 	EventResult,
 	EmitSettledRecord,
 } from '../types'
-import { isPromiseLike } from '../utils'
 
 export async function emitAllFromListeners<D extends EventDescriptor>(
 	listeners: EventListener<D>[] | undefined,
@@ -60,10 +60,11 @@ export async function emitSettledFromListeners<D extends EventDescriptor>(
 
 	for (let i = 0; i < len; i++) {
 		const fn = listeners[i]!
+		const recordFn = ((fn as any)[ORIGFUNC] ?? fn) as EventListener<D>
 		try {
 			const r = (fn as any)(...args)
 			if (r instanceof Error) {
-				results[i] = { fn, status: 'rejected', reason: r }
+				results[i] = { fn: recordFn, status: 'rejected', reason: r }
 				continue
 			}
 			if (isPromiseLike(r)) {
@@ -73,27 +74,31 @@ export async function emitSettledFromListeners<D extends EventDescriptor>(
 						(v: any) => {
 							if (v instanceof Error) {
 								return void (results[i] = {
-									fn,
+									fn: recordFn,
 									status: 'rejected',
 									reason: v,
 								})
 							}
 							return void (results[i] = {
-								fn,
+								fn: recordFn,
 								status: 'fulfilled',
 								value: v,
 							})
 						},
 						(reason: unknown) => {
-							return void (results[i] = { fn, status: 'rejected', reason })
+							return void (results[i] = {
+								fn: recordFn,
+								status: 'rejected',
+								reason,
+							})
 						},
 					),
 				)
 				continue
 			}
-			results[i] = { fn, status: 'fulfilled', value: r }
+			results[i] = { fn: recordFn, status: 'fulfilled', value: r }
 		} catch (reason) {
-			results[i] = { fn, status: 'rejected', reason }
+			results[i] = { fn: recordFn, status: 'rejected', reason }
 		}
 	}
 

@@ -4,7 +4,11 @@ import type {
 	EventListener,
 	Unsubscribe,
 } from '../types'
-import type { RegisterSingle, WrapFn } from './limitSingle'
+import type { WrapFn } from './limitSingle'
+
+type RegisterWaitListener<D extends EventDescriptor> = (
+	listener: EventListener<D>,
+) => Unsubscribe
 
 export interface CancellablePromise<T> extends Promise<T> {
 	cancel: () => void
@@ -12,7 +16,6 @@ export interface CancellablePromise<T> extends Promise<T> {
 
 export interface WaitForSingleOptions<D extends EventDescriptor> {
 	timeout?: number
-	prepend?: boolean
 	signal?: AbortSignal
 	filter?: (...args: EventArgs<D>) => boolean
 }
@@ -31,8 +34,8 @@ const waitForMessage = (
 
 export function waitForSingle<D extends EventDescriptor>(
 	wrap: WrapFn,
-	register: RegisterSingle<D>,
-	{ timeout, signal, filter, prepend }: WaitForSingleOptions<D> = {},
+	register: RegisterWaitListener<D>,
+	{ timeout, signal, filter }: WaitForSingleOptions<D> = {},
 	label?: string,
 ): CancellablePromise<EventArgs<D>> {
 	let offRef: Unsubscribe | null = null
@@ -88,7 +91,7 @@ export function waitForSingle<D extends EventDescriptor>(
 				cleanup()
 				resolve(args)
 			}) as EventListener<D>)
-			offRef = register(handler, prepend)
+			offRef = register(handler)
 			return
 		}
 
@@ -97,7 +100,7 @@ export function waitForSingle<D extends EventDescriptor>(
 			cleanup()
 			resolve(args)
 		}) as EventListener<D>)
-		offRef = register(handler, prepend)
+		offRef = register(handler)
 	}) as CancellablePromise<EventArgs<D>>
 
 	p.cancel = () => {

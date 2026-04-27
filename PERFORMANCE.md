@@ -27,7 +27,7 @@ for (let i = 0; i < snapshot.length; i++) {
 
 相关实现：
 
-- copy-on-write 工具：[src/utils.ts](./src/utils.ts)
+- copy-on-write 工具：[src/core/listener.ts](./src/core/listener.ts)
 - 命名事件触发：[src/eventified.ts](./src/eventified.ts)
 - 单事件通道触发：[src/channel.ts](./src/channel.ts)
 
@@ -49,7 +49,7 @@ Benchmark 源码：[tinybench/onlyEmit.ts](https://github.com/Kokoro-js/Eventure
 - 每个 sample 内部执行 `RUNS = 100_000` 次 emit；
 - sync 场景注册两个 listener；
 - async 场景使用微任务 barrier，不收集 `100_000` 个 Promise 再 `Promise.all`；
-- Eventure 在 benchmark 中使用 `catchPromiseError: false`，以对齐对比库的默认行为；
+- Eventure 在 benchmark 中使用 `captureRejections: false`，以对齐对比库的默认行为；
 - 每轮执行后校验 listener 累计调用结果，避免 benchmark 只测到空转；
 - console 表格展示 tinybench 原始 latency，PR markdown 展示每秒 emit 数、误差、样本数和由吞吐反推的单次 emit 延迟；
 - PR CI 通过命令参数在同一个 tinybench 进程里同时加载 base commit 与 PR 的 `dist/index.mjs`，并把 EventEmitter3、EventEmitter2、mitt 作为同机参考线；参考库版本会写入 markdown 方便复现，但不参与回归判断；

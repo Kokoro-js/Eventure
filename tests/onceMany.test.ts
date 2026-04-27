@@ -17,15 +17,16 @@ describe('Eventure once/many', () => {
 		emitter = new Eventure({ logger: silentLogger })
 	})
 
-	describe('once / onceFront', () => {
+	describe('once / at().once', () => {
 		it.each([
 			{
 				name: 'once',
 				register: (fn: (m: string) => void) => emitter.once('foo', fn),
 			},
 			{
-				name: 'onceFront',
-				register: (fn: (m: string) => void) => emitter.onceFront('foo', fn),
+				name: 'at-front once',
+				register: (fn: (m: string) => void) =>
+					emitter.at('foo', 'front').once(fn),
 			},
 		] as const)('$name only fires once', ({ register }) => {
 			const calls: string[] = []
@@ -48,10 +49,10 @@ describe('Eventure once/many', () => {
 			expect(emitter.count('foo')).toBe(0)
 		})
 
-		it('onceFront prepends relative to existing listeners', () => {
+		it('at(front).once prepends relative to existing listeners', () => {
 			const calls: string[] = []
 			emitter.on('bar', (a, b) => calls.push(`on:${a + b}`))
-			emitter.onceFront('bar', (a, b) => calls.push(`first:${a * b}`))
+			emitter.at('bar', 'front').once((a, b) => calls.push(`first:${a * b}`))
 
 			emitter.emit('bar', 2, 3)
 			expect(calls).toEqual(['first:6', 'on:5'])
@@ -79,7 +80,7 @@ describe('Eventure once/many', () => {
 		})
 	})
 
-	describe('many / manyFront', () => {
+	describe('many / at().many', () => {
 		it.each([
 			{
 				name: 'many',
@@ -87,9 +88,9 @@ describe('Eventure once/many', () => {
 					emitter.many('foo', times, fn),
 			},
 			{
-				name: 'manyFront',
+				name: 'at-front many',
 				register: (times: number, fn: (m: string) => void) =>
-					emitter.manyFront('foo', times, fn),
+					emitter.at('foo', 'front').many(times, fn),
 			},
 		] as const)('$name only fires N times', ({ register }) => {
 			const calls: string[] = []
@@ -104,10 +105,10 @@ describe('Eventure once/many', () => {
 			expect(emitter.count('foo')).toBe(0)
 		})
 
-		it('manyFront prepends relative to existing listeners', () => {
+		it('at(front).many prepends relative to existing listeners', () => {
 			const calls: string[] = []
 			emitter.on('bar', (a, b) => calls.push(`on:${a + b}`))
-			emitter.manyFront('bar', 2, (a, b) => calls.push(`first:${a * b}`))
+			emitter.at('bar', 'front').many(2, (a, b) => calls.push(`first:${a * b}`))
 
 			emitter.emit('bar', 2, 3)
 			emitter.emit('bar', 4, 1)

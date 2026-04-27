@@ -37,7 +37,7 @@ type Emitter = {
 	emit(event: typeof EVENT, payload: Payload): unknown
 }
 type EventureConstructor = new (options?: {
-	catchPromiseError?: boolean
+	captureRejections?: boolean
 }) => Emitter
 type Candidate = {
 	label: string
@@ -61,11 +61,11 @@ const eventureCandidates = await (async () => {
 		return [
 			{
 				label: `${NAME} base`,
-				create: () => new BaselineEventure({ catchPromiseError: false }),
+				create: () => new BaselineEventure({ captureRejections: false }),
 			},
 			{
 				label: `${NAME} PR`,
-				create: () => new TargetEventure({ catchPromiseError: false }),
+				create: () => new TargetEventure({ captureRejections: false }),
 			},
 		] satisfies Candidate[]
 	}
@@ -77,7 +77,7 @@ const eventureCandidates = await (async () => {
 	return [
 		{
 			label: NAME,
-			create: () => new Eventure({ catchPromiseError: false }),
+			create: () => new Eventure({ captureRejections: false }),
 		},
 	] satisfies Candidate[]
 })()

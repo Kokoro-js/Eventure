@@ -29,16 +29,16 @@ const events = new Eventure<Events>()
 
 ```ts
 new Eventure<Events>({
-	events: ['message'],
-	catchPromiseError: true,
-	checkSyncFuncReturnPromise: false,
+	preallocateEvents: ['message'],
+	captureRejections: true,
+	captureReturnedPromises: false,
 	errorPolicy: 'log',
 })
 ```
 
-- `events`：预初始化事件名。
-- `catchPromiseError`：是否捕获异步 listener 的 rejection，默认 `true`。
-- `checkSyncFuncReturnPromise`：是否处理同步函数返回 Promise 的情况，默认 `false`。
+- `preallocateEvents`：预先为事件名分配 listener 数组，适合固定事件集合。
+- `captureRejections`：是否捕获 async listener 的 rejection，默认 `true`。
+- `captureReturnedPromises`：是否检查非 async listener 返回的 Promise，默认 `false`，打开后注册侧会包裹更多 listener。
 - `errorPolicy`：同步错误策略，取值为 `'silent'`、`'log'`、`'throw'`，默认 `'log'`。
 - `logger`：自定义日志对象，需要符合导出的 `Logger` 类型。
 
@@ -46,8 +46,8 @@ new Eventure<Events>({
 
 ```ts
 const off = events.on('message', listener, { signal })
-events.onFront('message', listener)
-events.onAt('message', { at: 0 }, listener)
+events.at('message', 'front').on(listener)
+events.at('message', 2).once(listener)
 
 events.off('message', listener)
 events.clear('message')
@@ -55,29 +55,28 @@ events.clear()
 ```
 
 - `on(event, listener, options?)`：尾部注册 listener，返回退订函数。
-- `onFront(event, listener, options?)`：注册到队列头部。
-- `onAt(event, { at, signal? }, listener)`：按位置注册，`at` 可以是数字，也可以是 `(ctx) => number`。
+- `at(event, position)`：返回带位置的注册 scope，`position` 支持 `'front'`、`'back'`、数字和 `(ctx) => number`。
 - `off(event, listener)`：移除一个 listener，返回是否真的移除。
 - `clear(event?)`：清空指定事件；不传事件名时清空全部。
+- 注册尾参统一称为 `options`，类型为 `SubscriptionOptions`，目前只承载 `signal` 这类订阅生命周期控制。
 - 退订函数同时支持 `[Symbol.dispose]`，可配合 `using` 使用。
 
 ### 限次和条件监听
 
 ```ts
 events.once('message', listener)
-events.onceFront('message', listener)
 events.many('message', 3, listener)
-events.manyFront('message', 3, listener)
 
 events.when('message', (text) => text.startsWith('ok:')).once(listener)
+events.at('message', 'front').when(Boolean).many(3, listener)
 events.waitFor('message', { timeout: 1000, filter: Boolean })
 ```
 
-- `once` / `onceFront`：命中一次后自动退订。
-- `many` / `manyFront`：命中指定次数后自动退订，`times` 必须是正整数。
-- `when(event, predicate?)`：返回条件注册器，支持 `once`、`onceFront`、`many`、`manyFront`。
+- `once(event, listener, options?)`：命中一次后自动退订。
+- `many(event, times, listener, options?)`：命中指定次数后自动退订，`times` 必须是正整数。
+- `when(event, predicate)`：返回条件注册 scope，支持 `on`、`once`、`many`，也可以继续 `.at(...)` 组合。
 - `waitFor(event, options?)`：返回带 `cancel()` 方法的 Promise，resolve 值是事件参数 tuple。
-- `waitFor` 支持 `timeout`、`signal`、`filter` 和 `prepend`。
+- `waitFor` 支持 `timeout`、`signal` 和 `filter`。
 
 ### 触发
 
@@ -117,7 +116,7 @@ for await (const record of events.fireAsync('sum', 1, 2)) {
 
 - `fire(event, ...args)`：返回同步 generator，每次 yield 一个 listener 的执行结果。
 - `fireAsync(event, ...args)`：返回 async generator，逐个等待 listener。
-- 两者也支持直接传 listener 数组：`fire(listeners, ...args)`。
+- 两者也支持显式 listener 快照：`fireFrom(listeners, ...args)` / `fireAsyncFrom(listeners, ...args)`。
 
 `fire()` 的记录类型包括：
 
@@ -129,6 +128,8 @@ for await (const record of events.fireAsync('sum', 1, 2)) {
 
 - `{ type: 'success', fn, result }`
 - `{ type: 'error', fn, error }`
+
+记录里的 `fn` 始终是用户注册时传入的原始 listener。
 
 ### Waterfall
 
@@ -147,6 +148,7 @@ const result = pipeline.waterfall('num', 1)
 - `ok: false`：某个 listener 没有调用 `next`，流水线被中断。
 
 也可以在最后传入一个 inner callback，作为所有 listener 之后的收尾函数。
+如果需要对指定 listener 快照执行流水线，使用 `waterfallFrom(listeners, ...args)`。
 
 ### 查询
 
@@ -179,8 +181,7 @@ channel.emit('hello')
 常用方法：
 
 - `on(listener, options?)`
-- `onFront(listener, options?)`
-- `onAt({ at, signal? }, listener)`
+- `at(position).on(listener, options?)`
 - `off(listener)`
 - `clear()`
 - `emit(...args)`
@@ -188,15 +189,16 @@ channel.emit('hello')
 - `emitSettled(...args)`
 - `count()`
 - `listeners()`
-- `once(listener, predicate?)`
-- `onceFront(listener, predicate?)`
-- `many(times, listener, predicate?)`
-- `manyFront(times, listener, predicate?)`
-- `when(predicate?)`
+- `once(listener, options?)`
+- `many(times, listener, options?)`
+- `when(predicate)`
 - `waitFor(options?)`
 - `fire(...args)`
+- `fireFrom(listeners, ...args)`
 - `fireAsync(...args)`
+- `fireAsyncFrom(listeners, ...args)`
 - `waterfall(...args)`
+- `waterfallFrom(listeners, ...args)`
 
-`EvtChannel` 使用与 `Eventure` 相同的构造策略参数，但没有 `events` 预初始化选项。
+`EvtChannel` 使用与 `Eventure` 相同的构造策略参数，但没有 `preallocateEvents` 预分配选项。
 `maxListeners` 语义也相同：默认 `10`，`0` 或 `Infinity` 表示不限制。

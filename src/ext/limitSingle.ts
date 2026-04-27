@@ -1,10 +1,4 @@
-import type {
-	EventArgs,
-	EventDescriptor,
-	EventListener,
-	Unsubscribe,
-} from '../types'
-import { attachDispose } from '../utils'
+import type { EventArgs, EventDescriptor, EventListener } from '../types'
 
 export type GuardResult = boolean | undefined | void
 export type GuardPredicate<D extends EventDescriptor> = (
@@ -12,58 +6,48 @@ export type GuardPredicate<D extends EventDescriptor> = (
 ) => GuardResult
 
 export type WrapFn = <T extends (...args: any[]) => any>(listener: T) => T
-export type RegisterSingle<D extends EventDescriptor> = (
-	listener: EventListener<D>,
-	prepend?: boolean,
-) => Unsubscribe
 
-export interface WhenGuard<D extends EventDescriptor> {
-	once(listener: EventListener<D>): Unsubscribe
-	onceFront(listener: EventListener<D>): Unsubscribe
-	many(times: number, listener: EventListener<D>): Unsubscribe
-	manyFront(times: number, listener: EventListener<D>): Unsubscribe
-}
-
-export function limitSingle<D extends EventDescriptor>(
-	wrap: WrapFn,
-	register: RegisterSingle<D>,
-	listener: EventListener<D>,
-	times = 1,
-	prepend = false,
-	predicate?: GuardPredicate<D>,
-): Unsubscribe {
+export function normalizeTimes(times: number): number {
 	if (!Number.isInteger(times) || times < 1) {
 		throw new RangeError('times must be a positive integer')
 	}
+	return times
+}
 
-	const wrapped = wrap(listener)
-	let left = times
-
-	let offRef: Unsubscribe | null = null
-	const unsubscribe: Unsubscribe = () => {
-		const off = offRef
-		if (off) {
-			offRef = null
-			off()
+export function combineGuardPredicate<D extends EventDescriptor>(
+	left: GuardPredicate<D> | undefined,
+	right: GuardPredicate<D>,
+): GuardPredicate<D> {
+	return (...args) => {
+		if (left !== undefined) {
+			const matched = left(...args)
+			if (matched === false || matched === undefined) return false
 		}
+		return right(...args)
 	}
+}
 
-	const attach = (handler: EventListener<D>) => register(handler, prepend)
-	const subscription = attachDispose(unsubscribe)
+export function createLimitedListener<D extends EventDescriptor>(
+	wrapped: EventListener<D>,
+	times: number,
+	predicate: GuardPredicate<D> | undefined,
+	unsubscribe: () => void,
+): EventListener<D> {
+	let left = times
+	const unlimited = times === 0
+	if (!unlimited && times !== 1) normalizeTimes(times)
 
 	if (predicate === undefined) {
-		const handler = ((...args: EventArgs<D>) => {
+		return ((...args: EventArgs<D>) => {
 			try {
 				return wrapped(...args)
 			} finally {
-				if (--left === 0) unsubscribe()
+				if (!unlimited && --left === 0) unsubscribe()
 			}
 		}) as EventListener<D>
-		offRef = attach(handler)
-		return subscription
 	}
 
-	const handler = ((...args: EventArgs<D>) => {
+	return ((...args: EventArgs<D>) => {
 		const matched = predicate(...args)
 		if (matched === false || matched === undefined) {
 			return undefined as ReturnType<EventListener<D>>
@@ -71,46 +55,7 @@ export function limitSingle<D extends EventDescriptor>(
 		try {
 			return wrapped(...args)
 		} finally {
-			if (--left === 0) unsubscribe()
+			if (!unlimited && --left === 0) unsubscribe()
 		}
 	}) as EventListener<D>
-	offRef = attach(handler)
-	return subscription
-}
-
-export function onceWithOps<D extends EventDescriptor>(
-	wrap: WrapFn,
-	register: RegisterSingle<D>,
-	listener: EventListener<D>,
-	predicate?: GuardPredicate<D>,
-	prepend = false,
-): Unsubscribe {
-	return limitSingle(wrap, register, listener, 1, prepend, predicate)
-}
-
-export function manyWithOps<D extends EventDescriptor>(
-	wrap: WrapFn,
-	register: RegisterSingle<D>,
-	times: number,
-	listener: EventListener<D>,
-	predicate?: GuardPredicate<D>,
-	prepend = false,
-): Unsubscribe {
-	return limitSingle(wrap, register, listener, times, prepend, predicate)
-}
-
-export function createWhenGuard<D extends EventDescriptor>(
-	wrap: WrapFn,
-	register: RegisterSingle<D>,
-	predicate?: GuardPredicate<D>,
-): WhenGuard<D> {
-	return {
-		once: (listener) => onceWithOps(wrap, register, listener, predicate, false),
-		onceFront: (listener) =>
-			onceWithOps(wrap, register, listener, predicate, true),
-		many: (times, listener) =>
-			manyWithOps(wrap, register, times, listener, predicate, false),
-		manyFront: (times, listener) =>
-			manyWithOps(wrap, register, times, listener, predicate, true),
-	}
 }

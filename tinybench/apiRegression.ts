@@ -42,11 +42,11 @@ type ChannelInstance = {
 }
 
 type EventureConstructor = new (options?: {
-	catchPromiseError?: boolean
+	captureRejections?: boolean
 	logger?: BenchLogger
 }) => EventureInstance
 type ChannelConstructor = new (options?: {
-	catchPromiseError?: boolean
+	captureRejections?: boolean
 	logger?: BenchLogger
 }) => ChannelInstance
 type BenchLogger = {
@@ -91,7 +91,7 @@ const silentLogger: BenchLogger = {
 }
 
 const eventureOptions = {
-	catchPromiseError: false,
+	captureRejections: false,
 	logger: silentLogger,
 }
 

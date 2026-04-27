@@ -39,10 +39,14 @@ export type EmitSettledRecord<Fn, Value> =
 	| { fn: Fn; status: 'fulfilled'; value: Value }
 	| { fn: Fn; status: 'rejected'; reason: unknown }
 
-/** —— 注册参数 —— */
-export interface OnOptions {
-	/** 是否前插（默认尾插） */
-	prepend?: boolean
+export type ListenerPosition<Ctx = unknown> =
+	| 'front'
+	| 'back'
+	| number
+	| ((ctx: Ctx) => number)
+
+/** —— 订阅参数：只保留横切生命周期控制，监听语义由 API 表达 —— */
+export interface SubscriptionOptions {
 	/** 绑定 AbortSignal，触发后自动退订 */
 	signal?: AbortSignal
 }
@@ -50,24 +54,24 @@ export interface OnOptions {
 /** —— 运行时错误策略 —— */
 export type ErrorPolicy = 'silent' | 'log' | 'throw'
 
-/** —— 监听器包裹策略（供 utils 与 Options 共享） —— */
+/** —— 监听器包裹策略（供 core/listener 与构造参数共享） —— */
 export interface ListenerWrapPolicy {
 	/** 是否捕获/规避异步监听器的 rejection（默认 true） */
-	catchPromiseError?: boolean
-	/** 是否处理“同步函数返回 Promise”之类的行为（默认 false） */
-	checkSyncFuncReturnPromise?: boolean
+	captureRejections?: boolean
+	/** 是否检查非 async listener 返回的 Promise（默认 false） */
+	captureReturnedPromises?: boolean
 	/** 同步/异步错误处理策略（默认 'log'） */
 	errorPolicy?: ErrorPolicy
 }
 
-/** —— 构造参数：继承策略类型，附加 logger & 事件预分配 —— */
-export interface EventEmitterOptions<
+/** —— Eventure 构造参数：继承策略类型，附加 logger & 事件预分配 —— */
+export interface EventureOptions<
 	E extends { [K in keyof E]: EventDescriptor } = Record<
 		string | symbol,
 		EventDescriptor
 	>,
 > extends ListenerWrapPolicy {
 	logger?: Logger
-	/** 如果提供，就会在构造时预先 `this._listeners[event] = []` */
-	events?: (keyof E)[]
+	/** 如果提供，就会在构造时预先为这些事件名分配 listener 数组 */
+	preallocateEvents?: (keyof E)[]
 }

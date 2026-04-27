@@ -101,7 +101,7 @@ describe('EvtChannel fire & waterfall helpers', () => {
 		chan.on(boomFn)
 
 		const subset = chan.listeners().slice(0, 2)
-		const subsetRecords = Array.from(chan.fire(subset, 'hi'))
+		const subsetRecords = Array.from(chan.fireFrom(subset, 'hi'))
 
 		expect(subsetRecords).toHaveLength(2)
 		expect(subsetRecords[0]).toMatchObject({
@@ -115,7 +115,7 @@ describe('EvtChannel fire & waterfall helpers', () => {
 		}
 		await expect(second.promise).resolves.toBe('hihi')
 
-		const gen = chan.fire(chan.listeners(), 'ok')
+		const gen = chan.fireFrom(chan.listeners(), 'ok')
 		expect(Array.from(gen)).toHaveLength(3)
 
 		const asyncTypes: string[] = []
@@ -144,7 +144,7 @@ describe('EvtChannel fire & waterfall helpers', () => {
 		expect(interrupted).toEqual({ ok: false, value: -2 })
 
 		const snapshot = pipeline.listeners().slice(0, 2)
-		const withInner = pipeline.waterfall(
+		const withInner = pipeline.waterfallFrom(
 			snapshot,
 			1,
 			(final: number) => final * 10,

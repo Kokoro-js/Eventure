@@ -1,3 +1,4 @@
+import { IS_ASYNC, ORIGFUNC, isPromiseLike } from '../core/listener'
 import type {
 	Awaitable,
 	EventArgs,
@@ -5,7 +6,6 @@ import type {
 	EventListener,
 	EventResult,
 } from '../types'
-import { IS_ASYNC, isPromiseLike } from '../utils'
 
 export type FireSyncRecord<D extends EventDescriptor> =
 	| { type: 'success'; fn: EventListener<D>; result: EventResult<D> }
@@ -27,12 +27,13 @@ export function* fireFromListeners<D extends EventDescriptor>(
 	const len = listeners.length
 	for (let i = 0; i < len; i++) {
 		const fn = listeners[i]!
+		const recordFn = ((fn as any)[ORIGFUNC] ?? fn) as EventListener<D>
 		if ((fn as any)[IS_ASYNC] === true) {
 			try {
 				const promise = fn(...args) as Awaitable<EventResult<D>>
-				yield { type: 'async', fn, promise }
+				yield { type: 'async', fn: recordFn, promise }
 			} catch (error) {
-				yield { type: 'error', fn, error }
+				yield { type: 'error', fn: recordFn, error }
 			}
 			continue
 		}
@@ -41,14 +42,14 @@ export function* fireFromListeners<D extends EventDescriptor>(
 			if (isPromiseLike(result)) {
 				yield {
 					type: 'async',
-					fn,
+					fn: recordFn,
 					promise: Promise.resolve(result) as Awaitable<EventResult<D>>,
 				}
 				continue
 			}
-			yield { type: 'success', fn, result }
+			yield { type: 'success', fn: recordFn, result }
 		} catch (error) {
-			yield { type: 'error', fn, error }
+			yield { type: 'error', fn: recordFn, error }
 		}
 	}
 }
@@ -60,15 +61,16 @@ export async function* fireAsyncFromListeners<D extends EventDescriptor>(
 	const len = listeners.length
 	for (let i = 0; i < len; i++) {
 		const fn = listeners[i]!
+		const recordFn = ((fn as any)[ORIGFUNC] ?? fn) as EventListener<D>
 		try {
 			const result = (await fn(...args)) as Awaited<EventResult<D>>
 			if ((result as any) instanceof Error) {
-				yield { type: 'error', fn, error: result }
+				yield { type: 'error', fn: recordFn, error: result }
 				continue
 			}
-			yield { type: 'success', fn, result }
+			yield { type: 'success', fn: recordFn, result }
 		} catch (error) {
-			yield { type: 'error', fn, error }
+			yield { type: 'error', fn: recordFn, error }
 		}
 	}
 }

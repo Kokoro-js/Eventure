@@ -48,9 +48,8 @@ const results = await events.emitAll('sum', 1, 2)
 - 调用方控制中断：[fire / fireAsync](https://github.com/Kokoro-js/Eventure/blob/main/tests/fire.test.ts) 逐个产出 listener 的 `success` / `error` / `async` 结果；调用方可以 `break` / `return`，后续 listener 不会继续执行。
 - 监听方控制短路：[waterfall](https://github.com/Kokoro-js/Eventure/blob/main/tests/waterfall.test.ts) 让 listener 通过 `next` 串联；某个 listener 不调用 `next` 时流水线停止，并返回 `{ ok: false, value }`。
 - 单事件通道：[EvtChannel](https://github.com/Kokoro-js/Eventure/blob/main/tests/channel.test.ts) 适合只管理一个事件的场景，方法与 `Eventure` 基本一致但不需要事件名。
-- 条件与限次监听：[once / many](https://github.com/Kokoro-js/Eventure/blob/main/tests/onceMany.test.ts) 和 [when](https://github.com/Kokoro-js/Eventure/blob/main/tests/when.test.ts) 支持一次性、限次、带 predicate 的监听。
+- 条件、限次与位置监听：[once / many](https://github.com/Kokoro-js/Eventure/blob/main/tests/onceMany.test.ts)、[when](https://github.com/Kokoro-js/Eventure/blob/main/tests/when.test.ts) 和 [at scope](https://github.com/Kokoro-js/Eventure/blob/main/tests/scope.test.ts) 支持一次性、限次、带 predicate 和指定插入位置的监听。
 - 等待下一次事件：[waitFor](https://github.com/Kokoro-js/Eventure/blob/main/tests/waitFor.test.ts) 支持过滤、超时、取消和 `AbortSignal`。
-- 插入顺序控制：[onAt](https://github.com/Kokoro-js/Eventure/blob/main/tests/onAt.test.ts) 支持按位置插入 listener，也支持 `AbortSignal` 自动退订。
 - 批量收集结果：[emitAll / emitSettled](https://github.com/Kokoro-js/Eventure/blob/main/tests/emitAllSettled.test.ts) 分别对应快速失败和 settled 结果收集。
 - 基础行为：[Eventure 基础测试](https://github.com/Kokoro-js/Eventure/blob/main/tests/index.test.ts) 覆盖注册、触发、退订和异步错误处理。
 

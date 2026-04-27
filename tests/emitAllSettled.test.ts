@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 
 import type { EmitSettledRecord } from 'eventure'
-import { Eventure, EvtChannel, ORIGFUNC } from 'eventure'
+import { Eventure, EvtChannel } from 'eventure'
 
 import { silentLogger } from './testUtils'
 
@@ -75,15 +75,12 @@ describe.each(harnesses)('emitAll/emitSettled ($name)', ({ create }) => {
 		const r0 = results[0]
 		if (!r0) throw new Error('Expected result[0]')
 		expect(r0).toMatchObject({ status: 'fulfilled', value: 'x!' })
-		expect(r0.fn === syncOk || (r0.fn as any)?.[ORIGFUNC] === syncOk).toBe(true)
+		expect(r0.fn).toBe(syncOk)
 
 		const r1 = results[1]
 		if (!r1) throw new Error('Expected result[1]')
 		expect(r1).toMatchObject({ status: 'rejected' })
-		expect(
-			r1.fn === syncReturnError ||
-				(r1.fn as any)?.[ORIGFUNC] === syncReturnError,
-		).toBe(true)
+		expect(r1.fn).toBe(syncReturnError)
 		if (r1.status !== 'rejected') throw new Error('Expected rejected result[1]')
 		expect(r1.reason).toBeInstanceOf(Error)
 		expect((r1.reason as Error).message).toBe('bad-value')
@@ -91,9 +88,7 @@ describe.each(harnesses)('emitAll/emitSettled ($name)', ({ create }) => {
 		const r2 = results[2]
 		if (!r2) throw new Error('Expected result[2]')
 		expect(r2).toMatchObject({ status: 'rejected' })
-		expect(
-			r2.fn === asyncThrow || (r2.fn as any)?.[ORIGFUNC] === asyncThrow,
-		).toBe(true)
+		expect(r2.fn).toBe(asyncThrow)
 		if (r2.status !== 'rejected') throw new Error('Expected rejected result[2]')
 		expect(r2.reason).toBeInstanceOf(Error)
 		expect((r2.reason as Error).message).toBe('boom')
