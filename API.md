@@ -74,7 +74,7 @@ events.waitFor('message', { timeout: 1000, filter: Boolean })
 ```
 
 - `once` / `onceFront`：命中一次后自动退订。
-- `many` / `manyFront`：命中指定次数后自动退订，`times` 必须大于等于 `1`。
+- `many` / `manyFront`：命中指定次数后自动退订，`times` 必须是正整数。
 - `when(event, predicate?)`：返回条件注册器，支持 `once`、`onceFront`、`many`、`manyFront`。
 - `waitFor(event, options?)`：返回带 `cancel()` 方法的 Promise，resolve 值是事件参数 tuple。
 - `waitFor` 支持 `timeout`、`signal`、`filter` 和 `prepend`。

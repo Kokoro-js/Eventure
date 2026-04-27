@@ -43,10 +43,20 @@ type ChannelInstance = {
 
 type EventureConstructor = new (options?: {
 	catchPromiseError?: boolean
+	logger?: BenchLogger
 }) => EventureInstance
 type ChannelConstructor = new (options?: {
 	catchPromiseError?: boolean
+	logger?: BenchLogger
 }) => ChannelInstance
+type BenchLogger = {
+	trace: (...args: unknown[]) => void
+	debug: (...args: unknown[]) => void
+	info: (...args: unknown[]) => void
+	warn: (...args: unknown[]) => void
+	error: (...args: unknown[]) => void
+	fatal: (...args: unknown[]) => void
+}
 type EventureModule = {
 	Eventure: EventureConstructor
 	EvtChannel: ChannelConstructor
@@ -71,6 +81,20 @@ type ApiCase = {
 const importEventure = async (specifier: string, baseDir?: string) =>
 	(await import(resolveImport(specifier, baseDir))) as EventureModule
 
+const silentLogger: BenchLogger = {
+	trace: () => {},
+	debug: () => {},
+	info: () => {},
+	warn: () => {},
+	error: () => {},
+	fatal: () => {},
+}
+
+const eventureOptions = {
+	catchPromiseError: false,
+	logger: silentLogger,
+}
+
 const eventureCandidates = await (async () => {
 	if (eventureImports.length === 2) {
 		const [baselineImport, targetImport] = eventureImports
@@ -81,14 +105,13 @@ const eventureCandidates = await (async () => {
 		return [
 			{
 				label: `${NAME} base`,
-				createEventure: () => new base.Eventure({ catchPromiseError: false }),
-				createChannel: () => new base.EvtChannel({ catchPromiseError: false }),
+				createEventure: () => new base.Eventure(eventureOptions),
+				createChannel: () => new base.EvtChannel(eventureOptions),
 			},
 			{
 				label: `${NAME} PR`,
-				createEventure: () => new target.Eventure({ catchPromiseError: false }),
-				createChannel: () =>
-					new target.EvtChannel({ catchPromiseError: false }),
+				createEventure: () => new target.Eventure(eventureOptions),
+				createChannel: () => new target.EvtChannel(eventureOptions),
 			},
 		] satisfies Candidate[]
 	}
@@ -100,8 +123,8 @@ const eventureCandidates = await (async () => {
 	return [
 		{
 			label: NAME,
-			createEventure: () => new mod.Eventure({ catchPromiseError: false }),
-			createChannel: () => new mod.EvtChannel({ catchPromiseError: false }),
+			createEventure: () => new mod.Eventure(eventureOptions),
+			createChannel: () => new mod.EvtChannel(eventureOptions),
 		},
 	] satisfies Candidate[]
 })()
@@ -127,6 +150,14 @@ const pairedCandidates =
 				},
 				eventureCandidates[0]!,
 				eventureCandidates[1]!,
+				{
+					...eventureCandidates[1]!,
+					label: `${eventureCandidates[1]!.label} mirror`,
+				},
+				{
+					...eventureCandidates[0]!,
+					label: `${eventureCandidates[0]!.label} mirror`,
+				},
 			]
 		: eventureCandidates
 
@@ -555,7 +586,7 @@ const renderMarkdown = (
 		`Runtime: ${renderRuntime(bench)}`,
 		`Ops/sample vary by case; checksum: \`${checksum}\``,
 		paired
-			? 'Rows compare the steady-state base/PR tasks after mirrored warmup tasks.'
+			? 'Rows aggregate mirrored steady-state base/PR task positions after mirrored warmup tasks.'
 			: 'Single-version smoke run.',
 		'',
 	]
@@ -602,7 +633,8 @@ const renderMarkdown = (
 					1) *
 				100
 	const hasRegression =
-		geomeanDelta !== null && geomeanDelta < -REGRESSION_THRESHOLD_PCT
+		(geomeanDelta !== null && geomeanDelta < -REGRESSION_THRESHOLD_PCT) ||
+		caseRegressions.length > 0
 
 	lines.push('')
 	if (geomeanDelta !== null) {
@@ -610,12 +642,12 @@ const renderMarkdown = (
 	}
 	if (caseRegressions.length > 0) {
 		lines.push(
-			`- Potential case regressions: ${caseRegressions.map((name) => `\`${name}\``).join(', ')}.`,
+			`- Significant case regressions: ${caseRegressions.map((name) => `\`${name}\``).join(', ')}.`,
 		)
 	}
 	if (hasRegression) {
 		lines.push(
-			`- Significant API regression detected. Threshold: -${REGRESSION_THRESHOLD_PCT.toFixed(2)}% geomean.`,
+			`- Significant API regression detected. Threshold: -${REGRESSION_THRESHOLD_PCT.toFixed(2)}% geomean or any significant single-case regression.`,
 		)
 	} else {
 		lines.push('- No significant regressions detected.')

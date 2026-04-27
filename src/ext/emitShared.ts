@@ -15,7 +15,7 @@ export async function emitAllFromListeners<D extends EventDescriptor>(
 
 	const len = listeners.length
 	const results = new Array<Awaited<EventResult<D>>>(len)
-	let pending: Promise<unknown>[] | null = null
+	let pending: Promise<void>[] | null = null
 
 	for (let i = 0; i < len; i++) {
 		const fn = listeners[i] as any
@@ -30,8 +30,7 @@ export async function emitAllFromListeners<D extends EventDescriptor>(
 				pending.push(
 					Promise.resolve(r).then((v: any) => {
 						if (v instanceof Error) throw v
-						results[i] = v
-						return v
+						return void (results[i] = v)
 					}),
 				)
 				continue
@@ -57,7 +56,7 @@ export async function emitSettledFromListeners<D extends EventDescriptor>(
 	const results = new Array<
 		EmitSettledRecord<EventListener<D>, Awaited<EventResult<D>>>
 	>(len)
-	let pending: Promise<unknown>[] | null = null
+	let pending: Promise<void>[] | null = null
 
 	for (let i = 0; i < len; i++) {
 		const fn = listeners[i]!
@@ -73,22 +72,20 @@ export async function emitSettledFromListeners<D extends EventDescriptor>(
 					Promise.resolve(r).then(
 						(v: any) => {
 							if (v instanceof Error) {
-								const record = {
+								return void (results[i] = {
 									fn,
 									status: 'rejected',
 									reason: v,
-								} as const
-								results[i] = record
-								return record
+								})
 							}
-							const record = { fn, status: 'fulfilled', value: v } as const
-							results[i] = record
-							return record
+							return void (results[i] = {
+								fn,
+								status: 'fulfilled',
+								value: v,
+							})
 						},
 						(reason: unknown) => {
-							const record = { fn, status: 'rejected', reason } as const
-							results[i] = record
-							return record
+							return void (results[i] = { fn, status: 'rejected', reason })
 						},
 					),
 				)

@@ -4,6 +4,7 @@ import type {
 	EventListener,
 	Unsubscribe,
 } from '../types'
+import { attachDispose } from '../utils'
 
 export type GuardResult = boolean | undefined | void
 export type GuardPredicate<D extends EventDescriptor> = (
@@ -31,7 +32,9 @@ export function limitSingle<D extends EventDescriptor>(
 	prepend = false,
 	predicate?: GuardPredicate<D>,
 ): Unsubscribe {
-	if (times < 1) throw new Error('times must be >= 1')
+	if (!Number.isInteger(times) || times < 1) {
+		throw new RangeError('times must be a positive integer')
+	}
 
 	const wrapped = wrap(listener)
 	let left = times
@@ -46,30 +49,33 @@ export function limitSingle<D extends EventDescriptor>(
 	}
 
 	const attach = (handler: EventListener<D>) => register(handler, prepend)
+	const subscription = attachDispose(unsubscribe)
 
 	if (predicate === undefined) {
 		const handler = ((...args: EventArgs<D>) => {
 			try {
-				wrapped(...args)
+				return wrapped(...args)
 			} finally {
 				if (--left === 0) unsubscribe()
 			}
 		}) as EventListener<D>
 		offRef = attach(handler)
-		return unsubscribe
+		return subscription
 	}
 
 	const handler = ((...args: EventArgs<D>) => {
 		const matched = predicate(...args)
-		if (matched === false || matched === undefined) return
+		if (matched === false || matched === undefined) {
+			return undefined as ReturnType<EventListener<D>>
+		}
 		try {
-			wrapped(...args)
+			return wrapped(...args)
 		} finally {
 			if (--left === 0) unsubscribe()
 		}
 	}) as EventListener<D>
 	offRef = attach(handler)
-	return unsubscribe
+	return subscription
 }
 
 export function onceWithOps<D extends EventDescriptor>(

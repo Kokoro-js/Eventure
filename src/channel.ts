@@ -76,6 +76,11 @@ export type ChannelWaitForPromise<D extends EventDescriptor> =
 
 export type ChannelWhenReturn<D extends EventDescriptor> = WhenGuard<D>
 
+const isListenerSnapshot = <D extends EventDescriptor>(
+	value: unknown,
+): value is EventListener<D>[] =>
+	Array.isArray(value) && value.length > 0 && typeof value[0] === 'function'
+
 export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 	protected _listeners: EventListener<D>[] = []
 
@@ -383,7 +388,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		...args: EventArgs<D>
 	): Generator<ChannelFireSyncResult<D>>
 	public fire(...args: any[]): Generator<ChannelFireSyncResult<D>> {
-		if (Array.isArray(args[0])) {
+		if (isListenerSnapshot<D>(args[0])) {
 			const [listeners, ...rest] = args as [
 				EventListener<D>[],
 				...EventArgs<D>[],
@@ -401,7 +406,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		...args: EventArgs<D>
 	): AsyncGenerator<ChannelFireAsyncResult<D>>
 	public fireAsync(...args: any[]): AsyncGenerator<ChannelFireAsyncResult<D>> {
-		if (Array.isArray(args[0])) {
+		if (isListenerSnapshot<D>(args[0])) {
 			const [listeners, ...rest] = args as [
 				EventListener<D>[],
 				...EventArgs<D>[],
@@ -430,7 +435,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 			: [...ChannelSplit<D>['args'], ChannelSplit<D>['next']]
 	): ChannelWFResult<D>
 	public waterfall(...args: any[]): ChannelWFResult<D> {
-		if (Array.isArray(args[0])) {
+		if (isListenerSnapshot<D>(args[0])) {
 			const [listeners, ...rest] = args as [EventListener<D>[], ...any[]]
 			return runWaterfall(listeners, rest) as any
 		}

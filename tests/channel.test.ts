@@ -151,4 +151,31 @@ describe('EvtChannel fire & waterfall helpers', () => {
 		)
 		expect(withInner).toEqual({ ok: true, value: 40 })
 	})
+
+	it('does not confuse array payloads with listener snapshots', async () => {
+		const arrays = new EvtChannel<(values: string[]) => number>()
+		arrays.on((values) => values.length)
+
+		const records = Array.from(arrays.fire(['a', 'b']))
+		expect(records).toHaveLength(1)
+		expect(records[0]).toMatchObject({ type: 'success', result: 2 })
+
+		const asyncRecords: string[] = []
+		for await (const record of arrays.fireAsync(['x'])) {
+			asyncRecords.push(record.type)
+			expect(record).toMatchObject({ type: 'success', result: 1 })
+		}
+		expect(asyncRecords).toEqual(['success'])
+
+		type ArrayPipeline = (
+			values: string[],
+			next: (values: string[]) => number,
+		) => number
+		const pipeline = new EvtChannel<ArrayPipeline>()
+		pipeline.on((values, next) => next([...values, 'tail']))
+
+		expect(
+			pipeline.waterfall(['head'], (values: string[]) => values.length),
+		).toEqual({ ok: true, value: 2 })
+	})
 })
