@@ -56,7 +56,7 @@ Benchmark 源码：[tinybench/onlyEmit.ts](https://github.com/Kokoro-js/Eventure
 - emit reference 使用 `base -> PR -> controls -> PR -> base` 的镜像任务位置；API regression 按 case 先执行 base/PR 镜像 warmup，再执行 `base -> PR -> PR -> base` 的稳态镜像任务并聚合，降低固定执行顺序和预热阶段带来的偏差；
 - paired benchmark 只比较同一轮里的 Eventure base 与 Eventure PR，外部库不参与版本或回归对比；API regression 会在 API geomean 低于阈值或任一单 case 出现显著回归时失败；markdown 会写入 GitHub step summary/output，不再落盘两份 JSON 后二次 compare；
 - `bench:onlyEmit` / `bench:compare` 保留为 emit 参考线，对比 Eventure 与 EventEmitter3、EventEmitter2、mitt；
-- `bench:api` 是 Eventure-only PR 回归 benchmark，覆盖命名事件、单事件通道、emit 参数形态、listener 数量、on/off churn、emitAll、emitSettled、fire、waterfall 和 waitFor；它不和外部库比较，专门看 base/PR 的 API 性能变化。
+- `bench:api` 是 Eventure-only PR 回归 benchmark，覆盖命名事件、单事件通道、emit 参数形态、listener 数量、on/off churn、默认 async 捕获、返回 Promise 捕获、emitAll、emitSettled、fire、waterfall 和 waitFor；它不和外部库比较，专门看 base/PR 的 API 性能变化。
 
 本地常用命令：
 

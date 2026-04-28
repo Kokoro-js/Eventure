@@ -79,11 +79,12 @@ describe.each(harnesses)('emitAll/emitSettled ($name)', ({ create }) => {
 
 		const r1 = results[1]
 		if (!r1) throw new Error('Expected result[1]')
-		expect(r1).toMatchObject({ status: 'rejected' })
+		expect(r1).toMatchObject({ status: 'fulfilled' })
 		expect(r1.fn).toBe(syncReturnError)
-		if (r1.status !== 'rejected') throw new Error('Expected rejected result[1]')
-		expect(r1.reason).toBeInstanceOf(Error)
-		expect((r1.reason as Error).message).toBe('bad-value')
+		if (r1.status !== 'fulfilled')
+			throw new Error('Expected fulfilled result[1]')
+		expect(r1.value).toBeInstanceOf(Error)
+		expect((r1.value as Error).message).toBe('bad-value')
 
 		const r2 = results[2]
 		if (!r2) throw new Error('Expected result[2]')
@@ -103,21 +104,23 @@ describe.each(harnesses)('emitAll/emitSettled ($name)', ({ create }) => {
 				},
 			},
 			{
-				label: 'returns Error',
-				listener: (_value: string) => new Error('boom'),
-			},
-			{
 				label: 'promise reject',
 				listener: (_value: string) => Promise.reject(new Error('boom')),
-			},
-			{
-				label: 'promise resolve Error',
-				listener: (_value: string) => Promise.resolve(new Error('boom')),
 			},
 		] satisfies Array<{ label: string; listener: Listener }>),
 	])('emitAll rejects when: $label', async ({ listener }) => {
 		h.on((_value) => 'ok')
 		h.on(listener)
 		await expect(h.emitAll('x')).rejects.toThrow('boom')
+	})
+
+	it('emitAll preserves Error objects returned as values', async () => {
+		const syncError = new Error('sync-value')
+		const asyncError = new Error('async-value')
+
+		h.on(() => syncError)
+		h.on(() => Promise.resolve(asyncError))
+
+		await expect(h.emitAll('x')).resolves.toEqual([syncError, asyncError])
 	})
 })

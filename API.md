@@ -88,7 +88,7 @@ const settled = await events.emitSettled('sum', 1, 2)
 ```
 
 - `emit(event, ...args)`：同步触发所有 listener，返回触发数量。
-- `emitAll(event, ...args)`：等待所有 listener 结果；listener throw、reject 或返回 `Error` 时 reject。
+- `emitAll(event, ...args)`：等待所有 listener 结果；listener throw 或 reject 时 reject。正常返回的 `Error` 对象会作为普通返回值保留。
 - `emitSettled(event, ...args)`：始终 resolve，返回 `{ fn, status, value | reason }[]`。
 
 `emit()` 读取触发开始时的监听器快照。listener 在触发过程中新增或移除，不会影响当前这次触发。
@@ -130,6 +130,7 @@ for await (const record of events.fireAsync('sum', 1, 2)) {
 - `{ type: 'error', fn, error }`
 
 记录里的 `fn` 始终是用户注册时传入的原始 listener。
+正常返回或 resolve 的 `Error` 对象是 `success` 结果；只有 throw/reject 会进入 `error` 结果。
 
 ### Waterfall
 

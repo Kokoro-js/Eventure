@@ -1,4 +1,9 @@
-import { IS_ASYNC, ORIGFUNC, isPromiseLike } from '../core/listener'
+import {
+	IS_ASYNC,
+	ORIGFUNC,
+	isCapturedError,
+	isPromiseLike,
+} from '../core/listener'
 import type {
 	Awaitable,
 	EventArgs,
@@ -20,6 +25,11 @@ export type FireAsyncRecord<D extends EventDescriptor> =
 	  }
 	| { type: 'error'; fn: EventListener<D>; error: unknown }
 
+const unwrapCapturedAsync = <T>(value: T): T => {
+	if (isCapturedError(value)) throw value.error
+	return value
+}
+
 export function* fireFromListeners<D extends EventDescriptor>(
 	listeners: EventListener<D>[],
 	args: EventArgs<D>,
@@ -30,7 +40,9 @@ export function* fireFromListeners<D extends EventDescriptor>(
 		const recordFn = ((fn as any)[ORIGFUNC] ?? fn) as EventListener<D>
 		if ((fn as any)[IS_ASYNC] === true) {
 			try {
-				const promise = fn(...args) as Awaitable<EventResult<D>>
+				const promise = Promise.resolve(fn(...args)).then(
+					unwrapCapturedAsync,
+				) as Awaitable<EventResult<D>>
 				yield { type: 'async', fn: recordFn, promise }
 			} catch (error) {
 				yield { type: 'error', fn: recordFn, error }
@@ -39,11 +51,17 @@ export function* fireFromListeners<D extends EventDescriptor>(
 		}
 		try {
 			const result = fn(...args)
+			if (isCapturedError(result)) {
+				yield { type: 'error', fn: recordFn, error: result.error }
+				continue
+			}
 			if (isPromiseLike(result)) {
 				yield {
 					type: 'async',
 					fn: recordFn,
-					promise: Promise.resolve(result) as Awaitable<EventResult<D>>,
+					promise: Promise.resolve(result).then(
+						unwrapCapturedAsync,
+					) as Awaitable<EventResult<D>>,
 				}
 				continue
 			}
@@ -64,8 +82,8 @@ export async function* fireAsyncFromListeners<D extends EventDescriptor>(
 		const recordFn = ((fn as any)[ORIGFUNC] ?? fn) as EventListener<D>
 		try {
 			const result = (await fn(...args)) as Awaited<EventResult<D>>
-			if ((result as any) instanceof Error) {
-				yield { type: 'error', fn: recordFn, error: result }
+			if (isCapturedError(result)) {
+				yield { type: 'error', fn: recordFn, error: result.error }
 				continue
 			}
 			yield { type: 'success', fn: recordFn, result }

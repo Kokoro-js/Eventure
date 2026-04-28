@@ -1,7 +1,7 @@
 // tests/index.test.ts
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
-import { Eventure } from 'eventure'
+import { Eventure, EvtChannel } from 'eventure'
 
 import { silentLogger } from './testUtils'
 
@@ -181,5 +181,26 @@ describe('Eventure core', () => {
 		emitter.clear('syncEvt')
 		expect(emitter.count('syncEvt')).toBe(0)
 		expect(emitter.listeners('syncEvt')).toEqual([])
+	})
+
+	it('keeps core state available to subclasses', () => {
+		class InspectableEventure extends Eventure<Events> {
+			public rawCount(event: keyof Events) {
+				return this._readListeners(event).length
+			}
+		}
+		class InspectableChannel extends EvtChannel<[number]> {
+			public rawCount() {
+				return this._listeners.length
+			}
+		}
+
+		const local = new InspectableEventure({ logger: silentLogger })
+		local.on('syncEvt', () => {})
+		expect(local.rawCount('syncEvt')).toBe(1)
+
+		const channel = new InspectableChannel({ logger: silentLogger })
+		channel.on(() => {})
+		expect(channel.rawCount()).toBe(1)
 	})
 })

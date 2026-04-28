@@ -23,6 +23,12 @@ const eventureImports = readImportArgs('./tinybench/apiRegression.ts')
 
 type EventureInstance = {
 	on(event: string, listener: (...args: any[]) => unknown): () => void
+	when(
+		event: string,
+		predicate?: (...args: any[]) => boolean,
+	): {
+		many: (times: number, listener: (...args: any[]) => unknown) => () => void
+	}
 	once(event: string, listener: (...args: any[]) => unknown): () => void
 	waitFor(event: string): Promise<any[]>
 	emit(event: string, ...args: any[]): number
@@ -36,19 +42,27 @@ type EventureInstance = {
 
 type ChannelInstance = {
 	on(listener: (...args: any[]) => unknown): () => void
+	when(predicate?: (...args: any[]) => boolean): {
+		many: (times: number, listener: (...args: any[]) => unknown) => () => void
+	}
 	emit(...args: any[]): number
 	count(): number
 	maxListeners: number
 }
 
-type EventureConstructor = new (options?: {
+type BenchEventureOptions = {
 	captureRejections?: boolean
+	catchPromiseError?: boolean
+	captureReturnedPromises?: boolean
+	checkSyncFuncReturnPromise?: boolean
 	logger?: BenchLogger
-}) => EventureInstance
-type ChannelConstructor = new (options?: {
-	captureRejections?: boolean
-	logger?: BenchLogger
-}) => ChannelInstance
+}
+type EventureConstructor = new (
+	options?: BenchEventureOptions,
+) => EventureInstance
+type ChannelConstructor = new (
+	options?: BenchEventureOptions,
+) => ChannelInstance
 type BenchLogger = {
 	trace: (...args: unknown[]) => void
 	debug: (...args: unknown[]) => void
@@ -64,6 +78,8 @@ type EventureModule = {
 type Candidate = {
 	label: string
 	createEventure: () => EventureInstance
+	createDefaultEventure: () => EventureInstance
+	createPromiseCaptureEventure: () => EventureInstance
 	createChannel: () => ChannelInstance
 }
 type Harness = {
@@ -92,7 +108,65 @@ const silentLogger: BenchLogger = {
 
 const eventureOptions = {
 	captureRejections: false,
+	catchPromiseError: false,
+	captureReturnedPromises: false,
+	checkSyncFuncReturnPromise: false,
 	logger: silentLogger,
+} satisfies BenchEventureOptions
+
+const defaultCaptureOptions = {
+	logger: silentLogger,
+} satisfies BenchEventureOptions
+
+const returnedPromiseCaptureOptions = {
+	captureRejections: true,
+	catchPromiseError: true,
+	captureReturnedPromises: true,
+	checkSyncFuncReturnPromise: true,
+	logger: silentLogger,
+} satisfies BenchEventureOptions
+
+const createAsyncEmitHarness = (
+	emitter: EventureInstance,
+	event: string,
+	createListener: (
+		begin: () => void,
+		complete: (data: typeof PAYLOAD) => void,
+	) => (data: typeof PAYLOAD) => unknown,
+): Harness => {
+	let count = 0
+	let pending = 0
+	let done: Promise<void> | null = null
+	let resolveDone: (() => void) | null = null
+	const begin = () => {
+		pending++
+		done ??= new Promise<void>((resolve) => {
+			resolveDone = resolve
+		})
+	}
+	const complete = (data: typeof PAYLOAD) => {
+		count += data.msg.length
+		if (--pending === 0) {
+			const resolve = resolveDone
+			done = null
+			resolveDone = null
+			resolve?.()
+		}
+	}
+	const listener = createListener(begin, complete)
+	emitter.on(event, listener)
+	emitter.on(event, listener)
+	return {
+		async run() {
+			count = 0
+			pending = 0
+			done = null
+			resolveDone = null
+			for (let i = 0; i < 10_000; i++) emitter.emit(event, PAYLOAD)
+			await done
+		},
+		value: () => count,
+	}
 }
 
 const eventureCandidates = await (async () => {
@@ -106,11 +180,17 @@ const eventureCandidates = await (async () => {
 			{
 				label: `${NAME} base`,
 				createEventure: () => new base.Eventure(eventureOptions),
+				createDefaultEventure: () => new base.Eventure(defaultCaptureOptions),
+				createPromiseCaptureEventure: () =>
+					new base.Eventure(returnedPromiseCaptureOptions),
 				createChannel: () => new base.EvtChannel(eventureOptions),
 			},
 			{
 				label: `${NAME} PR`,
 				createEventure: () => new target.Eventure(eventureOptions),
+				createDefaultEventure: () => new target.Eventure(defaultCaptureOptions),
+				createPromiseCaptureEventure: () =>
+					new target.Eventure(returnedPromiseCaptureOptions),
 				createChannel: () => new target.EvtChannel(eventureOptions),
 			},
 		] satisfies Candidate[]
@@ -124,6 +204,9 @@ const eventureCandidates = await (async () => {
 		{
 			label: NAME,
 			createEventure: () => new mod.Eventure(eventureOptions),
+			createDefaultEventure: () => new mod.Eventure(defaultCaptureOptions),
+			createPromiseCaptureEventure: () =>
+				new mod.Eventure(returnedPromiseCaptureOptions),
 			createChannel: () => new mod.EvtChannel(eventureOptions),
 		},
 	] satisfies Candidate[]
@@ -292,6 +375,41 @@ const cases: ApiCase[] = [
 		},
 	},
 	{
+		name: 'eventure.emit.default-async-capture',
+		runs: 10_000,
+		expected: 100_000,
+		async: true,
+		setup: (candidate) => {
+			const emitter = candidate.createDefaultEventure()
+			return createAsyncEmitHarness(
+				emitter,
+				'defaultAsync',
+				(begin, complete) => async (data) => {
+					begin()
+					await Promise.resolve()
+					complete(data)
+				},
+			)
+		},
+	},
+	{
+		name: 'eventure.emit.returned-promise-capture',
+		runs: 10_000,
+		expected: 100_000,
+		async: true,
+		setup: (candidate) => {
+			const emitter = candidate.createPromiseCaptureEventure()
+			return createAsyncEmitHarness(
+				emitter,
+				'returnedPromise',
+				(begin, complete) => (data) => {
+					begin()
+					return Promise.resolve().then(() => complete(data))
+				},
+			)
+		},
+	},
+	{
 		name: 'eventure.emitAll.sync',
 		runs: 10_000,
 		expected: 50_000,
@@ -322,7 +440,9 @@ const cases: ApiCase[] = [
 			const emitter = candidate.createEventure()
 			let count = 0
 			emitter.on('settled', () => 'ok')
-			emitter.on('settled', () => new Error('expected'))
+			emitter.on('settled', () => {
+				throw new Error('expected')
+			})
 			return {
 				async run() {
 					count = 0

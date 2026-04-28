@@ -38,6 +38,9 @@ type Emitter = {
 }
 type EventureConstructor = new (options?: {
 	captureRejections?: boolean
+	catchPromiseError?: boolean
+	captureReturnedPromises?: boolean
+	checkSyncFuncReturnPromise?: boolean
 }) => Emitter
 type Candidate = {
 	label: string
@@ -51,6 +54,13 @@ const importEventure = async (specifier: string, baseDir?: string) => {
 	return mod.Eventure
 }
 
+const eventureOptions = {
+	captureRejections: false,
+	catchPromiseError: false,
+	captureReturnedPromises: false,
+	checkSyncFuncReturnPromise: false,
+}
+
 const eventureCandidates = await (async () => {
 	if (eventureImports.length === 2) {
 		const [baselineImport, targetImport] = eventureImports
@@ -61,11 +71,11 @@ const eventureCandidates = await (async () => {
 		return [
 			{
 				label: `${NAME} base`,
-				create: () => new BaselineEventure({ captureRejections: false }),
+				create: () => new BaselineEventure(eventureOptions),
 			},
 			{
 				label: `${NAME} PR`,
-				create: () => new TargetEventure({ captureRejections: false }),
+				create: () => new TargetEventure(eventureOptions),
 			},
 		] satisfies Candidate[]
 	}
@@ -77,7 +87,7 @@ const eventureCandidates = await (async () => {
 	return [
 		{
 			label: NAME,
-			create: () => new Eventure({ captureRejections: false }),
+			create: () => new Eventure(eventureOptions),
 		},
 	] satisfies Candidate[]
 })()

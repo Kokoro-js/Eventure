@@ -3,8 +3,13 @@ import type { ErrorPolicy, ListenerWrapPolicy } from '../types'
 
 export const IS_ASYNC = Symbol.for('eventure:is_async')
 export const ORIGFUNC = Symbol.for('eventure:orig')
+export const CAPTURED_ERROR = Symbol('eventure:captured_error')
 
 export type WrapOptions = Required<ListenerWrapPolicy> & { logger: Logger }
+export type CapturedError = {
+	readonly [CAPTURED_ERROR]: true
+	readonly error: unknown
+}
 
 export function isNativeAsync(fn: { constructor: { name: string } }): boolean {
 	return fn.constructor.name === 'AsyncFunction'
@@ -12,6 +17,18 @@ export function isNativeAsync(fn: { constructor: { name: string } }): boolean {
 
 export function isPromiseLike(x: unknown): x is Promise<unknown> {
 	return x !== null && x !== undefined && typeof (x as any).then === 'function'
+}
+
+export function captureError(error: unknown): CapturedError {
+	return { [CAPTURED_ERROR]: true, error }
+}
+
+export function isCapturedError(value: unknown): value is CapturedError {
+	return (
+		value !== null &&
+		typeof value === 'object' &&
+		(value as any)[CAPTURED_ERROR] === true
+	)
 }
 
 export function onSyncError(
@@ -60,20 +77,20 @@ function wrapCheckedListener<T extends (...args: any[]) => any>(
 				return promise.catch((err: unknown) => {
 					if (options.errorPolicy === 'log') {
 						options.logger.error(err)
-						return err
+						return captureError(err)
 					}
 					if (options.errorPolicy === 'throw') throw err
-					return err
+					return captureError(err)
 				})
 			}
 			return r
 		} catch (err) {
 			if (options.errorPolicy === 'log') {
 				options.logger.error(err)
-				return err as any
+				return captureError(err) as any
 			}
 			if (options.errorPolicy === 'throw') throw err
-			return err as any
+			return captureError(err) as any
 		}
 	}) as T
 

@@ -85,9 +85,9 @@ export type EvtChannelWaitForPromise<D extends EventDescriptor> =
 export type { EvtChannelPosition, EvtChannelScope } from './channelScope'
 
 export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
-	private _listeners: EventListener<D>[] = []
+	protected _listeners: EventListener<D>[] = []
 
-	private _maxListeners = 10
+	protected _maxListeners = 10
 	get maxListeners(): number {
 		return this._maxListeners
 	}
@@ -95,10 +95,10 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		this._maxListeners = normalizeMaxListeners(count)
 	}
 
-	private _logger: Logger
-	private _errorPolicy: ErrorPolicy
+	protected _logger: Logger
+	protected _errorPolicy: ErrorPolicy
 
-	private _wrap: <T extends (...args: any[]) => any>(listener: T) => T
+	protected _wrap: <T extends (...args: any[]) => any>(listener: T) => T
 
 	constructor(options?: EvtChannelOptions<D>) {
 		this._logger = options?.logger ?? defaultLogger
@@ -114,11 +114,11 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		})
 	}
 
-	private _onSyncError(err: unknown): void {
+	protected _onSyncError(err: unknown): void {
 		onSyncError(err, this._errorPolicy, this._logger)
 	}
 
-	private _insert(
+	protected _insert(
 		fn: EventListener<D>,
 		posKind: PositionKind,
 		posValue: number | ((ctx: { count: number }) => number),
@@ -167,7 +167,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return signal === undefined ? sub : withAbortSignal(signal, sub)
 	}
 
-	private _append(fn: EventListener<D>, signal?: AbortSignal): Unsubscribe {
+	protected _append(fn: EventListener<D>, signal?: AbortSignal): Unsubscribe {
 		if (signal !== undefined && signal.aborted) return noopSubscription
 
 		const next = appendListenerCopy(this._listeners, fn)
@@ -184,7 +184,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return signal === undefined ? sub : withAbortSignal(signal, sub)
 	}
 
-	private _add(
+	protected _add(
 		listener: EventListener<D>,
 		times: number,
 		posKind: PositionKind,
@@ -216,7 +216,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return unsubscribe
 	}
 
-	private _makeSubscription(registered: EventListener<D>): Unsubscribe {
+	protected _makeSubscription(registered: EventListener<D>): Unsubscribe {
 		const unsub: Unsubscribe = (() => {
 			this._offRegistered(registered)
 		}) as Unsubscribe
@@ -234,11 +234,11 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return this._offBy(listener, false)
 	}
 
-	private _offRegistered(listener: EventListener<D>): boolean {
+	protected _offRegistered(listener: EventListener<D>): boolean {
 		return this._offBy(listener, true)
 	}
 
-	private _offBy(listener: EventListener<D>, exact: boolean): boolean {
+	protected _offBy(listener: EventListener<D>, exact: boolean): boolean {
 		const prev = this._listeners
 		if (prev.length === 0) return false
 		let idx = -1
@@ -372,7 +372,7 @@ export class EvtChannel<D extends EventDescriptor = EventDescriptor> {
 		return this._add(listener, times, POS_BACK, 0, undefined, options?.signal)
 	}
 
-	private _scope(
+	protected _scope(
 		posKind: PositionKind,
 		posValue: number | ((ctx: { count: number }) => number),
 		predicate?: GuardPredicate<D>,

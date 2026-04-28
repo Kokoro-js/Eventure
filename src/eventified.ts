@@ -105,11 +105,11 @@ export class Eventure<
 	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
 > {
 	// 事件 → 监听器列表（不可变写入，emit 避免 slice）
-	private _listeners: { [K in keyof E]?: EventListener<E[K]>[] } =
+	protected _listeners: { [K in keyof E]?: EventListener<E[K]>[] } =
 		Object.create(null)
-	private _activeEvents = new Set<keyof E>()
+	protected _activeEvents = new Set<keyof E>()
 
-	private _maxListeners = 10
+	protected _maxListeners = 10
 	get maxListeners() {
 		return this._maxListeners
 	}
@@ -117,10 +117,10 @@ export class Eventure<
 		this._maxListeners = normalizeMaxListeners(count)
 	}
 
-	private _logger: Logger
-	private _errorPolicy: ErrorPolicy
+	protected _logger: Logger
+	protected _errorPolicy: ErrorPolicy
 	/** 预构建包装器，热路径零分配 */
-	private _wrap: <T extends (...args: any[]) => any>(listener: T) => T
+	protected _wrap: <T extends (...args: any[]) => any>(listener: T) => T
 
 	constructor(options?: EventureOptions<E>) {
 		this._logger = options?.logger ?? defaultLogger
@@ -141,15 +141,15 @@ export class Eventure<
 		})
 	}
 
-	private _onSyncError(err: unknown): void {
+	protected _onSyncError(err: unknown): void {
 		onSyncError(err, this._errorPolicy, this._logger)
 	}
 
-	private _readListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
+	protected _readListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
 		return (this._listeners[event] ?? EMPTY_LISTENERS) as EventListener<E[K]>[]
 	}
 
-	private _makeSubscription<K extends keyof E>(
+	protected _makeSubscription<K extends keyof E>(
 		event: K,
 		registered: EventListener<E[K]>,
 	): Unsubscribe {
@@ -159,7 +159,7 @@ export class Eventure<
 		return attachDispose(unsub)
 	}
 
-	private _insert<K extends keyof E>(
+	protected _insert<K extends keyof E>(
 		event: K,
 		fn: EventListener<E[K]>,
 		posKind: PositionKind,
@@ -209,7 +209,7 @@ export class Eventure<
 		return signal === undefined ? sub : withAbortSignal(signal, sub)
 	}
 
-	private _append<K extends keyof E>(
+	protected _append<K extends keyof E>(
 		event: K,
 		fn: EventListener<E[K]>,
 		signal?: AbortSignal,
@@ -232,7 +232,7 @@ export class Eventure<
 		return signal === undefined ? sub : withAbortSignal(signal, sub)
 	}
 
-	private _add<K extends keyof E>(
+	protected _add<K extends keyof E>(
 		event: K,
 		listener: EventListener<E[K]>,
 		times: number,
@@ -281,14 +281,14 @@ export class Eventure<
 		return this._offBy(event, listener, false)
 	}
 
-	private _offRegistered<K extends keyof E>(
+	protected _offRegistered<K extends keyof E>(
 		event: K,
 		listener: EventListener<E[K]>,
 	): boolean {
 		return this._offBy(event, listener, true)
 	}
 
-	private _offBy<K extends keyof E>(
+	protected _offBy<K extends keyof E>(
 		event: K,
 		listener: EventListener<E[K]>,
 		exact: boolean,
@@ -475,7 +475,7 @@ export class Eventure<
 		)
 	}
 
-	private _scope<K extends keyof E>(
+	protected _scope<K extends keyof E>(
 		event: K,
 		posKind: PositionKind,
 		posValue: number | ((ctx: { count: number; event: K }) => number),
