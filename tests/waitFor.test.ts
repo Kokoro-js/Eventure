@@ -1,6 +1,8 @@
 // tests/waitFor.test.ts
 import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test'
+
 import { Eventure } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 interface Events {
@@ -39,6 +41,19 @@ describe('Eventure.waitFor', () => {
 		expect(emitter.count('ready')).toBe(0)
 	})
 
+	it('rejects invalid timeout values before registering', () => {
+		expect(() => {
+			emitter.waitFor('ready', { timeout: -1 })
+		}).toThrow(RangeError)
+		expect(() => {
+			emitter.waitFor('ready', { timeout: Number.NaN })
+		}).toThrow(RangeError)
+		expect(() => {
+			emitter.waitFor('ready', { timeout: Infinity })
+		}).toThrow(RangeError)
+		expect(emitter.count('ready')).toBe(0)
+	})
+
 	it('supports filter (rejects when no matching emission occurs)', async () => {
 		const timeoutMs = 10
 		const p = emitter.waitFor('data', {
@@ -66,12 +81,46 @@ describe('Eventure.waitFor', () => {
 		expect(emitter.count('data')).toBe(0)
 	})
 
+	it('rejects and cleans up when filter throws', async () => {
+		const p = emitter.waitFor('data', {
+			timeout: 1000,
+			filter: () => {
+				throw new Error('bad filter')
+			},
+		})
+
+		emitter.emit('data', 1)
+
+		await expect(p).rejects.toThrow('bad filter')
+		expect(emitter.count('data')).toBe(0)
+	})
+
 	it('supports cancel()', async () => {
 		const p = emitter.waitFor('data', { timeout: 1000 })
 		// 立即取消
 		p.cancel()
 		emitter.emit('data', 99)
 		await expect(p).rejects.toThrow(`waitFor 'data' cancelled`)
+		expect(emitter.count('data')).toBe(0)
+	})
+
+	it('does not run filter after cancellation in the same emit snapshot', async () => {
+		let filterCalls = 0
+		const p = emitter.waitFor('data', {
+			timeout: 1000,
+			filter: () => {
+				filterCalls++
+				throw new Error('should not run')
+			},
+		})
+		const offFront = emitter.at('data', 'front').on(() => p.cancel())
+
+		emitter.emit('data', 1)
+
+		await expect(p).rejects.toThrow(`waitFor 'data' cancelled`)
+		expect(filterCalls).toBe(0)
+		expect(emitter.count('data')).toBe(1)
+		offFront()
 		expect(emitter.count('data')).toBe(0)
 	})
 

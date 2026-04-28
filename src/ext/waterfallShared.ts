@@ -1,4 +1,4 @@
-import type { EventDescriptor, EventListener } from '@/types'
+import type { EventDescriptor, EventListener } from '../types'
 
 export type SplitWaterfall<D extends EventDescriptor> = D extends (
 	...args: [...infer P, infer N]
@@ -10,7 +10,7 @@ export type SplitWaterfall<D extends EventDescriptor> = D extends (
 
 export type WFResult<R> = { ok: true; value: R } | { ok: false; value: R }
 
-const noopInner = () => undefined
+const noopInner = () => {}
 
 export function runWaterfall<D extends EventDescriptor>(
 	listeners: EventListener<D>[],

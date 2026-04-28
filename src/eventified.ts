@@ -1,19 +1,46 @@
 // eventified.ts
 
 import {
+	appendListenerCopy,
+	copyWithoutIndex,
+	createWrapHelper,
+	insertListenerCopy,
+	ORIGFUNC,
+	onSyncError,
+	prependListenerCopy,
+} from './core/listener'
+import {
+	attachDispose,
+	encodeListenerPosition,
+	normalizeMaxListeners,
+	noopSubscription,
+	POS_BACK,
+	POS_FRONT,
+	POS_INDEX,
+	POS_RESOLVE,
+	type PositionKind,
+	resolveInsertIndex,
+	withAbortSignal,
+} from './core/registration'
+import {
+	EventureListenerScope,
+	type EventurePosition,
+	type EventureScope,
+} from './eventureScope'
+import {
+	emitAllFromListeners,
+	emitSettledFromListeners,
+} from './ext/emitShared'
+import {
 	type FireAsyncRecord,
 	type FireSyncRecord,
 	fireAsyncFromListeners,
 	fireFromListeners,
 } from './ext/fireShared'
 import {
-	createWhenGuard,
+	createLimitedListener,
 	type GuardPredicate,
-	limitSingle,
-	manyWithOps,
-	onceWithOps,
-	type RegisterSingle,
-	type WhenGuard,
+	normalizeTimes,
 } from './ext/limitSingle'
 import {
 	type CancellablePromise,
@@ -30,28 +57,14 @@ import type {
 	ErrorPolicy,
 	EventArgs,
 	EventDescriptor,
-	EventEmitterOptions,
+	EventureOptions,
 	EventListener,
 	EventResult,
 	EmitSettledRecord,
 	IEventMap,
-	OnOptions,
+	SubscriptionOptions,
 	Unsubscribe,
 } from './types'
-import {
-	appendListenerCopy,
-	copyWithoutIndex,
-	createWrapHelper,
-	insertListenerCopy,
-	ORIGFUNC,
-	isPromiseLike,
-	noopSubscription,
-	onSyncError,
-	prependListenerCopy,
-	resolveInsertIndex,
-	withAbortSignal,
-	attachDispose,
-} from './utils'
 
 export type EventureFireSyncResult<
 	E extends IEventMap<E>,
@@ -79,12 +92,14 @@ export type EventureSplit<
 	E extends IEventMap<E>,
 	K extends WFKeys<E>,
 > = SplitWaterfall<E[K]>
-export type EventureWFResult<
-	E extends IEventMap<E>,
-	K extends WFKeys<E>,
-> = EventureSplit<E, K> extends never
-	? WFResult<never>
-	: WFResult<EventureSplit<E, K>['ret']>
+export type EventureWFResult<E extends IEventMap<E>, K extends WFKeys<E>> =
+	EventureSplit<E, K> extends never
+		? WFResult<never>
+		: WFResult<EventureSplit<E, K>['ret']>
+
+export type { EventurePosition, EventureScope } from './eventureScope'
+
+const EMPTY_LISTENERS: readonly EventListener<any>[] = []
 
 export class Eventure<
 	E extends IEventMap<E> = Record<string | symbol, EventDescriptor>,
@@ -99,32 +114,29 @@ export class Eventure<
 		return this._maxListeners
 	}
 	set maxListeners(count: number) {
-		this._maxListeners = count
+		this._maxListeners = normalizeMaxListeners(count)
 	}
 
 	protected _logger: Logger
-	protected _catchPromiseError: boolean
-	protected _checkSyncFuncReturnPromise: boolean
 	protected _errorPolicy: ErrorPolicy
 	/** 预构建包装器，热路径零分配 */
 	protected _wrap: <T extends (...args: any[]) => any>(listener: T) => T
 
-	constructor(options?: EventEmitterOptions<E>) {
+	constructor(options?: EventureOptions<E>) {
 		this._logger = options?.logger ?? defaultLogger
 
-		if (options?.events) {
-			for (const ev of options.events) this._listeners[ev] = []
+		if (options?.preallocateEvents) {
+			for (const ev of options.preallocateEvents) this._listeners[ev] = []
 		}
 
-		this._catchPromiseError = options?.catchPromiseError ?? true
-		this._checkSyncFuncReturnPromise =
-			options?.checkSyncFuncReturnPromise ?? false
+		const captureRejections = options?.captureRejections ?? true
+		const captureReturnedPromises = options?.captureReturnedPromises ?? false
 		this._errorPolicy = options?.errorPolicy ?? 'log'
 
 		this._wrap = createWrapHelper({
 			logger: this._logger,
-			catchPromiseError: this._catchPromiseError,
-			checkSyncFuncReturnPromise: this._checkSyncFuncReturnPromise,
+			captureRejections,
+			captureReturnedPromises,
 			errorPolicy: this._errorPolicy,
 		})
 	}
@@ -133,102 +145,132 @@ export class Eventure<
 		onSyncError(err, this._errorPolicy, this._logger)
 	}
 
-	/** 创建可退订句柄，并实现 [Symbol.dispose] 以支持 using */
+	protected _readListeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
+		return (this._listeners[event] ?? EMPTY_LISTENERS) as EventListener<E[K]>[]
+	}
+
 	protected _makeSubscription<K extends keyof E>(
 		event: K,
-		orig: EventListener<E[K]>,
+		registered: EventListener<E[K]>,
 	): Unsubscribe {
 		const unsub: Unsubscribe = (() => {
-			this.off(event, orig)
+			this._offRegistered(event, registered)
 		}) as Unsubscribe
-		// RAII/using：退出作用域自动退订
 		return attachDispose(unsub)
 	}
 
-	protected _register<K extends keyof E>(
+	protected _insert<K extends keyof E>(
 		event: K,
-		listener: EventListener<E[K]>,
-		opts?: OnOptions,
-		forcePrepend?: boolean,
+		fn: EventListener<E[K]>,
+		posKind: PositionKind,
+		posValue: number | ((ctx: { count: number; event: K }) => number),
+		signal?: AbortSignal,
 	): Unsubscribe {
-		const signal = opts?.signal
-		if (signal?.aborted) return noopSubscription
+		if (posKind === POS_BACK) return this._append(event, fn, signal)
+		if (signal !== undefined && signal.aborted) return noopSubscription
 
-		const fn = this._wrap(listener) as EventListener<E[K]>
 		const prev = this._listeners[event]
-		const usePrepend = forcePrepend ?? opts?.prepend ?? false
-		const next = usePrepend
-			? prependListenerCopy(prev, fn)
-			: appendListenerCopy(prev, fn)
+		const count = prev?.length ?? 0
+		let next: EventListener<E[K]>[]
+		switch (posKind) {
+			case POS_FRONT:
+				next = prependListenerCopy(prev, fn)
+				break
+			case POS_INDEX:
+				next = insertListenerCopy(
+					prev,
+					resolveInsertIndex(count, posValue as number),
+					fn,
+				)
+				break
+			case POS_RESOLVE:
+				next = insertListenerCopy(
+					prev,
+					resolveInsertIndex(
+						count,
+						posValue as (ctx: { count: number; event: K }) => number,
+						{ count, event },
+					),
+					fn,
+				)
+				break
+		}
 		this._listeners[event] = next
 
-		if (next.length > 0) this._activeEvents.add(event)
-		if (next.length > this._maxListeners) {
+		if (count === 0) this._activeEvents.add(event)
+		const maxListeners = this._maxListeners
+		if (maxListeners !== 0 && next.length > maxListeners) {
 			this._logger.warn(
 				`MaxListenersExceededWarning(remind memory leak): '${String(event)}' has ${next.length} listeners that exceed ${this._maxListeners}`,
 			)
 		}
 
-		const sub = this._makeSubscription(event, listener)
-
-		return withAbortSignal(signal, sub)
+		const sub = this._makeSubscription(event, fn)
+		return signal === undefined ? sub : withAbortSignal(signal, sub)
 	}
 
-	/** 统一注册：返回 Subscription（函数），避免重载与布尔位 */
+	protected _append<K extends keyof E>(
+		event: K,
+		fn: EventListener<E[K]>,
+		signal?: AbortSignal,
+	): Unsubscribe {
+		if (signal !== undefined && signal.aborted) return noopSubscription
+
+		const prev = this._listeners[event]
+		const next = appendListenerCopy(prev, fn)
+		this._listeners[event] = next
+		if (prev === undefined || prev.length === 0) this._activeEvents.add(event)
+
+		const maxListeners = this._maxListeners
+		if (maxListeners !== 0 && next.length > maxListeners) {
+			this._logger.warn(
+				`MaxListenersExceededWarning(remind memory leak): '${String(event)}' has ${next.length} listeners that exceed ${this._maxListeners}`,
+			)
+		}
+
+		const sub = this._makeSubscription(event, fn)
+		return signal === undefined ? sub : withAbortSignal(signal, sub)
+	}
+
+	protected _add<K extends keyof E>(
+		event: K,
+		listener: EventListener<E[K]>,
+		times: number,
+		posKind: PositionKind,
+		posValue: number | ((ctx: { count: number; event: K }) => number),
+		predicate?: GuardPredicate<E[K]>,
+		signal?: AbortSignal,
+	): Unsubscribe {
+		if (signal !== undefined && signal.aborted) return noopSubscription
+
+		const wrapped = this._wrap(listener)
+		if (times === 0 && predicate === undefined) {
+			return posKind === POS_BACK
+				? this._append(event, wrapped, signal)
+				: this._insert(event, wrapped, posKind, posValue, signal)
+		}
+
+		let offRef: Unsubscribe | null = null
+		const unsubscribe = attachDispose((() => {
+			const off = offRef
+			if (off !== null) {
+				offRef = null
+				off()
+			}
+		}) as Unsubscribe)
+
+		const fn = createLimitedListener(wrapped, times, predicate, unsubscribe)
+		Object.defineProperty(fn, ORIGFUNC, { value: listener, writable: false })
+		offRef = this._insert(event, fn, posKind, posValue, signal)
+		return unsubscribe
+	}
+
 	public on<K extends keyof E>(
 		event: K,
 		listener: EventListener<E[K]>,
-		opts?: OnOptions,
+		options?: SubscriptionOptions,
 	): Unsubscribe {
-		return this._register(event, listener, opts)
-	}
-
-	protected _singleRegister<K extends keyof E>(event: K): RegisterSingle<E[K]> {
-		return (listener, prepend) =>
-			this._register(event, listener, undefined, prepend ?? false)
-	}
-
-	/** 前插语义的快捷方式，等价于 on(event, listener, { prepend: true }) */
-	public onFront<K extends keyof E>(
-		event: K,
-		listener: EventListener<E[K]>,
-		opts?: Omit<OnOptions, 'prepend'>,
-	): Unsubscribe {
-		return this.onAt(event, { at: 0, signal: opts?.signal }, listener)
-	}
-
-	public onAt<K extends keyof E>(
-		event: K,
-		options: {
-			at: number | ((ctx: { count: number; event: K }) => number)
-			signal?: AbortSignal
-		},
-		listener: EventListener<E[K]>,
-	): Unsubscribe {
-		const signal = options.signal
-		if (signal?.aborted) return noopSubscription
-
-		const fn = this._wrap(listener) as EventListener<E[K]>
-		const prev = this._listeners[event]
-		const count = prev?.length ?? 0
-		const at = options.at
-		const index =
-			typeof at === 'function'
-				? resolveInsertIndex(count, at, { count, event })
-				: resolveInsertIndex(count, at)
-
-		const next = insertListenerCopy(prev, index, fn)
-		this._listeners[event] = next
-
-		if (next.length > 0) this._activeEvents.add(event)
-		if (next.length > this._maxListeners) {
-			this._logger.warn(
-				`MaxListenersExceededWarning(remind memory leak): '${String(event)}' has ${next.length} listeners that exceed ${this._maxListeners}`,
-			)
-		}
-
-		const sub = this._makeSubscription(event, listener)
-		return withAbortSignal(signal, sub)
+		return this._append(event, this._wrap(listener), options?.signal)
 	}
 
 	/** 移除单个监听器；返回是否真的移除了一个条目 */
@@ -236,14 +278,28 @@ export class Eventure<
 		event: K,
 		listener: EventListener<E[K]>,
 	): boolean {
+		return this._offBy(event, listener, false)
+	}
+
+	protected _offRegistered<K extends keyof E>(
+		event: K,
+		listener: EventListener<E[K]>,
+	): boolean {
+		return this._offBy(event, listener, true)
+	}
+
+	protected _offBy<K extends keyof E>(
+		event: K,
+		listener: EventListener<E[K]>,
+		exact: boolean,
+	): boolean {
 		const prev = this._listeners[event]
 		if (!prev || prev.length === 0) return false
 
-		// 支持对比“原函数”与“包装后函数”的映射（ORIGFUNC）
 		let idx = -1
 		for (let i = 0; i < prev.length; i++) {
 			const fn = prev[i] as any
-			if (fn === listener || fn[ORIGFUNC] === listener) {
+			if (fn === listener || (!exact && fn[ORIGFUNC] === listener)) {
 				idx = i
 				break
 			}
@@ -260,7 +316,7 @@ export class Eventure<
 	}
 
 	/** 批量清空；缺省则清空全部 */
-	public clear<K extends keyof E>(event?: K): void {
+	public clear(event?: keyof E): void {
 		if (event === undefined) {
 			this._listeners = Object.create(null)
 			this._activeEvents.clear()
@@ -348,102 +404,27 @@ export class Eventure<
 		return len
 	}
 
-	public async emitAll<K extends keyof E>(
+	public emitAll<K extends keyof E>(
 		event: K,
 		...args: EventArgs<E[K]>
 	): Promise<Awaited<EventResult<E[K]>>[]> {
-		const fns = this._listeners[event]
-		if (!fns || fns.length === 0) return []
-
-		const len = fns.length
-		const results = new Array<Awaited<EventResult<E[K]>>>(len)
-		let pending: Promise<void>[] | null = null
-
-		for (let i = 0; i < len; i++) {
-			const fn = fns[i] as any
-			try {
-				const r = fn(...args)
-				if (r instanceof Error) {
-					if (pending) void Promise.allSettled(pending)
-					return Promise.reject(r)
-				}
-				if (isPromiseLike(r)) {
-					pending ??= []
-					pending.push(
-						Promise.resolve(r).then((v: any) => {
-							if (v instanceof Error) throw v
-							results[i] = v
-						}),
-					)
-					continue
-				}
-				results[i] = r
-			} catch (err) {
-				if (pending) void Promise.allSettled(pending)
-				return Promise.reject(err)
-			}
-		}
-
-		if (pending) await Promise.all(pending)
-		return results
+		return emitAllFromListeners(this._listeners[event], args)
 	}
 
-	public async emitSettled<K extends keyof E>(
+	public emitSettled<K extends keyof E>(
 		event: K,
 		...args: EventArgs<E[K]>
 	): Promise<
 		EmitSettledRecord<EventListener<E[K]>, Awaited<EventResult<E[K]>>>[]
 	> {
-		const fns = this._listeners[event]
-		if (!fns || fns.length === 0) return []
-
-		const len = fns.length
-		const results = new Array<
-			EmitSettledRecord<EventListener<E[K]>, Awaited<EventResult<E[K]>>>
-		>(len)
-		let pending: Promise<void>[] | null = null
-
-		for (let i = 0; i < len; i++) {
-			const fn = fns[i]!
-			try {
-				const r = (fn as any)(...args)
-				if (r instanceof Error) {
-					results[i] = { fn, status: 'rejected', reason: r }
-					continue
-				}
-				if (isPromiseLike(r)) {
-					pending ??= []
-					pending.push(
-						Promise.resolve(r).then(
-							(v: any) => {
-								if (v instanceof Error) {
-									results[i] = { fn, status: 'rejected', reason: v }
-								} else {
-									results[i] = { fn, status: 'fulfilled', value: v }
-								}
-							},
-							(reason: unknown) => {
-								results[i] = { fn, status: 'rejected', reason }
-							},
-						),
-					)
-					continue
-				}
-				results[i] = { fn, status: 'fulfilled', value: r }
-			} catch (reason) {
-				results[i] = { fn, status: 'rejected', reason }
-			}
-		}
-
-		if (pending) await Promise.all(pending)
-		return results
+		return emitSettledFromListeners(this._listeners[event], args)
 	}
 
 	/** 观测/诊断工具：保持只读快照 */
-	public count<K extends keyof E>(event: K): number {
+	public count(event: keyof E): number {
 		return this._listeners[event]?.length ?? 0
 	}
-	public events(): Array<keyof E> {
+	public events(): (keyof E)[] {
 		return Array.from(this._activeEvents)
 	}
 	public listeners<K extends keyof E>(event: K): EventListener<E[K]>[] {
@@ -460,76 +441,92 @@ export class Eventure<
 		return this.listenersUnsafe(event)
 	}
 
-	/** 基础 limit 实现：面向自定义组合 */
-	public limit<K extends keyof E>(
-		event: K,
-		listener: EventListener<E[K]>,
-		times = 1,
-		prepend = false,
-		predicate?: GuardPredicate<E[K]>,
-	): Unsubscribe {
-		const register = this._singleRegister(event)
-		return limitSingle(
-			this._wrap,
-			register,
-			listener,
-			times,
-			prepend,
-			predicate,
-		)
-	}
-
 	public once<K extends keyof E>(
 		event: K,
 		listener: EventListener<E[K]>,
-		predicate?: GuardPredicate<E[K]>,
+		options?: SubscriptionOptions,
 	): Unsubscribe {
-		const register = this._singleRegister(event)
-		return onceWithOps(this._wrap, register, listener, predicate, false)
-	}
-
-	public onceFront<K extends keyof E>(
-		event: K,
-		listener: EventListener<E[K]>,
-		predicate?: GuardPredicate<E[K]>,
-	): Unsubscribe {
-		const register = this._singleRegister(event)
-		return onceWithOps(this._wrap, register, listener, predicate, true)
+		return this._add(
+			event,
+			listener,
+			1,
+			POS_BACK,
+			0,
+			undefined,
+			options?.signal,
+		)
 	}
 
 	public many<K extends keyof E>(
 		event: K,
 		times: number,
 		listener: EventListener<E[K]>,
-		predicate?: GuardPredicate<E[K]>,
+		options?: SubscriptionOptions,
 	): Unsubscribe {
-		const register = this._singleRegister(event)
-		return manyWithOps(this._wrap, register, times, listener, predicate, false)
+		normalizeTimes(times)
+		return this._add(
+			event,
+			listener,
+			times,
+			POS_BACK,
+			0,
+			undefined,
+			options?.signal,
+		)
 	}
 
-	public manyFront<K extends keyof E>(
+	protected _scope<K extends keyof E>(
 		event: K,
-		times: number,
-		listener: EventListener<E[K]>,
+		posKind: PositionKind,
+		posValue: number | ((ctx: { count: number; event: K }) => number),
 		predicate?: GuardPredicate<E[K]>,
-	): Unsubscribe {
-		const register = this._singleRegister(event)
-		return manyWithOps(this._wrap, register, times, listener, predicate, true)
+	): EventureScope<E, K> {
+		const add = (
+			listener: EventListener<E[K]>,
+			times: number,
+			scopePosKind: PositionKind,
+			scopePosValue: number | ((ctx: { count: number; event: K }) => number),
+			scopePredicate?: GuardPredicate<E[K]>,
+			signal?: AbortSignal,
+		) =>
+			this._add(
+				event,
+				listener,
+				times,
+				scopePosKind,
+				scopePosValue,
+				scopePredicate,
+				signal,
+			)
+		return new EventureListenerScope(
+			add,
+			posKind,
+			posValue,
+			predicate,
+		) as EventureScope<E, K>
 	}
 
 	public when<K extends keyof E>(
 		event: K,
-		predicate?: GuardPredicate<E[K]>,
-	): WhenGuard<E[K]> {
-		const register = this._singleRegister(event)
-		return createWhenGuard(this._wrap, register, predicate)
+		predicate: GuardPredicate<E[K]>,
+	): EventureScope<E, K> {
+		return this._scope(event, POS_BACK, 0, predicate)
+	}
+
+	public at<K extends keyof E>(
+		event: K,
+		position: EventurePosition<E, K>,
+	): EventureScope<E, K> {
+		const [encodedKind, encodedValue] = encodeListenerPosition(position)
+		return this._scope(event, encodedKind, encodedValue)
 	}
 
 	public waitFor<K extends keyof E>(
 		event: K,
 		options: EventureWaitForOptions<E, K> = {},
 	): EventureWaitForPromise<E, K> {
-		const register = this._singleRegister(event)
+		const register = (listener: EventListener<E[K]>) =>
+			this._append(event, listener)
 		return waitForSingle(this._wrap, register, options, String(event))
 	}
 
@@ -538,16 +535,16 @@ export class Eventure<
 		...args: EventArgs<E[K]>
 	): Generator<EventureFireSyncResult<E, K>>
 	public fire<K extends keyof E>(
-		listeners: EventListener<E[K]>[],
-		...args: EventArgs<E[K]>
-	): Generator<EventureFireSyncResult<E, K>>
-	public fire<K extends keyof E>(
-		eventOrListeners: K | EventListener<E[K]>[],
+		event: K,
 		...args: EventArgs<E[K]>
 	): Generator<FireSyncRecord<E[K]>> {
-		const listeners = Array.isArray(eventOrListeners)
-			? eventOrListeners
-			: this.listenersUnsafe(eventOrListeners)
+		return fireFromListeners(this._readListeners(event), args)
+	}
+
+	public fireFrom<K extends keyof E>(
+		listeners: EventListener<E[K]>[],
+		...args: EventArgs<E[K]>
+	): Generator<FireSyncRecord<E[K]>> {
 		return fireFromListeners(listeners, args)
 	}
 
@@ -556,16 +553,16 @@ export class Eventure<
 		...args: EventArgs<E[K]>
 	): AsyncGenerator<EventureFireAsyncResult<E, K>>
 	public fireAsync<K extends keyof E>(
-		listeners: EventListener<E[K]>[],
-		...args: EventArgs<E[K]>
-	): AsyncGenerator<EventureFireAsyncResult<E, K>>
-	public fireAsync<K extends keyof E>(
-		eventOrListeners: K | EventListener<E[K]>[],
+		event: K,
 		...args: EventArgs<E[K]>
 	): AsyncGenerator<FireAsyncRecord<E[K]>> {
-		const listeners = Array.isArray(eventOrListeners)
-			? eventOrListeners
-			: this.listenersUnsafe(eventOrListeners)
+		return fireAsyncFromListeners(this._readListeners(event), args)
+	}
+
+	public fireAsyncFrom<K extends keyof E>(
+		listeners: EventListener<E[K]>[],
+		...args: EventArgs<E[K]>
+	): AsyncGenerator<FireAsyncRecord<E[K]>> {
 		return fireAsyncFromListeners(listeners, args)
 	}
 
@@ -581,22 +578,26 @@ export class Eventure<
 			? never[]
 			: EventureSplit<E, K>['args']
 	): EventureWFResult<E, K>
-	public waterfall<K extends WFKeys<E>>(
-		listeners: EventListener<E[K]>[],
-		...args: EventureSplit<E, K> extends never
-			? never[]
-			: EventureSplit<E, K>['args']
-	): EventureWFResult<E, K>
-	public waterfall<K extends WFKeys<E>>(
+	public waterfall(event: any, ...args: any[]): WFResult<any> {
+		return runWaterfall(this._readListeners(event), args)
+	}
+
+	public waterfallFrom<K extends WFKeys<E>>(
 		listeners: EventListener<E[K]>[],
 		...args: EventureSplit<E, K> extends never
 			? never[]
 			: [...EventureSplit<E, K>['args'], EventureSplit<E, K>['next']]
 	): EventureWFResult<E, K>
-	public waterfall(eventOrListeners: any, ...args: any[]): WFResult<any> {
-		const callbacks: EventListener<any>[] = Array.isArray(eventOrListeners)
-			? eventOrListeners
-			: this.listenersUnsafe(eventOrListeners)
-		return runWaterfall(callbacks, args)
+	public waterfallFrom<K extends WFKeys<E>>(
+		listeners: EventListener<E[K]>[],
+		...args: EventureSplit<E, K> extends never
+			? never[]
+			: EventureSplit<E, K>['args']
+	): EventureWFResult<E, K>
+	public waterfallFrom(
+		listeners: EventListener<any>[],
+		...args: any[]
+	): WFResult<any> {
+		return runWaterfall(listeners, args)
 	}
 }

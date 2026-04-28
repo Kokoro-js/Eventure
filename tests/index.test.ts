@@ -1,6 +1,8 @@
 // tests/index.test.ts
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import { Eventure } from 'eventure'
+
+import { Eventure, EvtChannel } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 type Events = {
@@ -37,7 +39,7 @@ describe('Eventure core', () => {
 		expect(calls).toEqual([1001])
 	})
 
-	it('off() can remove wrapped listeners (via ORIGFUNC mapping)', () => {
+	it('off() can remove wrapped listeners by original function reference', () => {
 		const asyncFn = async (_msg: string) => {
 			await Promise.resolve()
 			return
@@ -45,7 +47,6 @@ describe('Eventure core', () => {
 		emitter.on('asyncEvt', asyncFn)
 		expect(emitter.count('asyncEvt')).toBe(1)
 
-		// async listeners are wrapped, so off() can match by ORIGFUNC.
 		expect(emitter.off('asyncEvt', asyncFn)).toBe(true)
 		expect(emitter.count('asyncEvt')).toBe(0)
 	})
@@ -94,6 +95,30 @@ describe('Eventure core', () => {
 		expect(String(warn.mock.calls[0]?.[0])).toContain('syncEvt')
 	})
 
+	it('supports maxListeners=0 as unlimited and rejects invalid limits', () => {
+		const warn = mock((..._args: unknown[]) => {})
+		const local = new Eventure<Pick<Events, 'syncEvt'>>({
+			logger: { ...silentLogger, warn },
+		})
+		local.maxListeners = 0
+
+		for (let i = 0; i < 20; i++) {
+			local.on('syncEvt', () => {})
+		}
+
+		expect(warn.mock.calls.length).toBe(0)
+		expect(() => {
+			local.maxListeners = -1
+		}).toThrow(RangeError)
+		expect(() => {
+			local.maxListeners = 1.5
+		}).toThrow(RangeError)
+
+		local.maxListeners = Infinity
+		local.on('syncEvt', () => {})
+		expect(warn.mock.calls.length).toBe(0)
+	})
+
 	it('captures async errors and forwards them to logger.error', async () => {
 		const errorSpy = mock(() => {})
 		emitter = new Eventure({ logger: { ...silentLogger, error: errorSpy } })
@@ -112,6 +137,38 @@ describe('Eventure core', () => {
 		expect(errorSpy.mock.calls.length).toBe(1)
 	})
 
+	it('uses captureRejections to control async listener wrapping', () => {
+		const asyncListener = async () => {}
+
+		const captured = new Eventure({ logger: silentLogger })
+		captured.on('asyncEvt', asyncListener)
+		expect(captured.listenersUnsafe('asyncEvt')[0]).not.toBe(asyncListener)
+
+		const raw = new Eventure({
+			captureRejections: false,
+			logger: silentLogger,
+		})
+		raw.on('asyncEvt', asyncListener)
+		expect(raw.listenersUnsafe('asyncEvt')[0]).toBe(asyncListener)
+	})
+
+	it('uses captureReturnedPromises for non-async promise listeners', async () => {
+		const errorSpy = mock(() => {})
+		emitter = new Eventure({
+			captureReturnedPromises: true,
+			logger: { ...silentLogger, error: errorSpy },
+		})
+
+		const listener = () => Promise.reject(new Error('returned'))
+		emitter.on('asyncEvt', listener)
+		expect(emitter.listenersUnsafe('asyncEvt')[0]).not.toBe(listener)
+
+		emitter.emit('asyncEvt', 'oops')
+		await Promise.resolve()
+		await Promise.resolve()
+		expect(errorSpy.mock.calls.length).toBe(1)
+	})
+
 	it('exposes count(), listeners() and clear()', () => {
 		const a = () => {}
 		const b = () => {}
@@ -124,5 +181,26 @@ describe('Eventure core', () => {
 		emitter.clear('syncEvt')
 		expect(emitter.count('syncEvt')).toBe(0)
 		expect(emitter.listeners('syncEvt')).toEqual([])
+	})
+
+	it('keeps core state available to subclasses', () => {
+		class InspectableEventure extends Eventure<Events> {
+			public rawCount(event: keyof Events) {
+				return this._readListeners(event).length
+			}
+		}
+		class InspectableChannel extends EvtChannel<[number]> {
+			public rawCount() {
+				return this._listeners.length
+			}
+		}
+
+		const local = new InspectableEventure({ logger: silentLogger })
+		local.on('syncEvt', () => {})
+		expect(local.rawCount('syncEvt')).toBe(1)
+
+		const channel = new InspectableChannel({ logger: silentLogger })
+		channel.on(() => {})
+		expect(channel.rawCount()).toBe(1)
 	})
 })

@@ -1,6 +1,8 @@
 // tests/fire.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { Eventure, IS_ASYNC, ORIGFUNC } from 'eventure'
+
+import { Eventure } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 export interface Events {
@@ -54,13 +56,11 @@ describe('Eventure.fire (sync generator)', () => {
 		if (!rec) throw new Error('Expected a record')
 
 		expect(rec.type).toBe('async')
-		// wrapper 上绑定的 ORIGFUNC 正好是原始 asyncFn
-		expect(rec.fn[ORIGFUNC]).toBe(asyncFn)
-		expect(rec.fn[IS_ASYNC]).toBe(true)
+		expect(rec.fn).toBe(asyncFn)
 		await expect(rec.promise).resolves.toBe('OK')
 	})
 
-	it('exposes async throw as a resolved Error value (sync generator)', async () => {
+	it('exposes async throw as a rejected async record promise', async () => {
 		const boomFn = async (s: string) => {
 			throw new Error('boom')
 		}
@@ -71,9 +71,7 @@ describe('Eventure.fire (sync generator)', () => {
 		if (!rec) throw new Error('Expected a record')
 
 		expect(rec.type).toBe('async')
-		const v = await rec.promise
-		expect(v).toBeInstanceOf(Error)
-		expect((v as Error).message).toBe('boom')
+		await expect(rec.promise).rejects.toThrow('boom')
 	})
 
 	it('treats promise-returning listeners as async records', async () => {
@@ -113,18 +111,22 @@ describe('Eventure.fireAsync (AsyncGenerator)', () => {
 		}
 		const asyncOk = async (s: string) => s.repeat(2)
 		const asyncErr = async (s: string) => new Error('bad result')
+		const asyncThrow = async () => {
+			throw new Error('bad throw')
+		}
 
 		emitter.on('ev', syncFn)
 		emitter.on('ev', throwFn)
 		emitter.on('ev', asyncOk)
 		emitter.on('ev', asyncErr)
+		emitter.on('ev', asyncThrow)
 
 		const results: any[] = []
 		for await (const r of emitter.fireAsync('ev', 'a')) {
 			results.push(r)
 		}
 
-		expect(results).toHaveLength(4)
+		expect(results).toHaveLength(5)
 
 		// sync 成功
 		expect(results[0]).toEqual({
@@ -139,16 +141,19 @@ describe('Eventure.fireAsync (AsyncGenerator)', () => {
 		expect(results[1].error).toBeInstanceOf(Error)
 		expect((results[1].error as Error).message).toBe('oops')
 
-		// async 成功 —— 比较 orig func
 		expect(results[2].type).toBe('success')
-		expect(results[2].fn[ORIGFUNC]).toBe(asyncOk)
+		expect(results[2].fn).toBe(asyncOk)
 		expect(results[2].result).toBe('aa')
 
-		// async 返回 Error 实例当作 error —— 比较 orig func
-		expect(results[3].type).toBe('error')
-		expect(results[3].fn[ORIGFUNC]).toBe(asyncErr)
-		expect(results[3].error).toBeInstanceOf(Error)
-		expect((results[3].error as Error).message).toBe('bad result')
+		expect(results[3].type).toBe('success')
+		expect(results[3].fn).toBe(asyncErr)
+		expect(results[3].result).toBeInstanceOf(Error)
+		expect((results[3].result as Error).message).toBe('bad result')
+
+		expect(results[4].type).toBe('error')
+		expect(results[4].fn).toBe(asyncThrow)
+		expect(results[4].error).toBeInstanceOf(Error)
+		expect((results[4].error as Error).message).toBe('bad throw')
 	})
 
 	it('supports early termination (return/break) without invoking later listeners', async () => {

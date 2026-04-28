@@ -1,6 +1,8 @@
 // tests/when.test.ts
 import { beforeEach, describe, expect, it } from 'bun:test'
+
 import { Eventure } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 interface Events {
@@ -31,21 +33,22 @@ describe('Eventure when()', () => {
 		expect(calls).toEqual([4]) // 已自动退订，不再触发
 	})
 
-	it('onceFront() respects prepend order and predicate', () => {
+	it('at(front).when().once() respects prepend order and predicate', () => {
 		const calls: string[] = []
 
 		emitter.on('str', (s) => calls.push(`on:${s}`))
 
 		// 只在字符串长度大于 3 时，优先触发一次
 		emitter
-			.when('str', (s) => s.length > 3)
-			.onceFront((s) => calls.push(`first:${s}`))
+			.at('str', 'front')
+			.when((s) => s.length > 3)
+			.once((s) => calls.push(`first:${s}`))
 
 		emitter.emit('str', 'hi')
 		expect(calls).toEqual(['on:hi']) // predicate false
 
 		emitter.emit('str', 'hello')
-		// onceFront 先执行，然后普通 listener
+		// at(front) 先执行，然后普通 listener
 		expect(calls).toEqual(['on:hi', 'first:hello', 'on:hello'])
 
 		calls.length = 0
@@ -73,13 +76,13 @@ describe('Eventure when()', () => {
 		expect(calls).toEqual([1, 2, 3]) // 不再触发
 	})
 
-	it('manyFront() respects prepend order and limit', () => {
+	it('at(front).many() respects prepend order and limit', () => {
 		const calls: string[] = []
 
 		emitter.on('str', (s) => calls.push(`on:${s}`))
 
-		// 任意字符串，前两次 manyFront 优先触发
-		emitter.when('str').manyFront(2, (s) => calls.push(`first:${s}`))
+		// 任意字符串，前两次 at(front).many 优先触发
+		emitter.at('str', 'front').many(2, (s) => calls.push(`first:${s}`))
 
 		emitter.emit('str', 'a')
 		expect(calls).toEqual(['first:a', 'on:a'])
@@ -94,11 +97,10 @@ describe('Eventure when()', () => {
 		expect(calls).toEqual(['on:c'])
 	})
 
-	it('when() without predicate behaves like always-true', () => {
+	it('at().once() can be used when no predicate is needed', () => {
 		const calls: number[] = []
 
-		// 等同于 .when("num", () => true).once(...)
-		emitter.when('num').once((n) => calls.push(n))
+		emitter.at('num', 'back').once((n) => calls.push(n))
 
 		emitter.emit('num', 7)
 		emitter.emit('num', 8)
@@ -111,9 +113,7 @@ describe('Eventure when()', () => {
 
 		emitter.when('num', (n) => n % 2 === 0).many(2, (n) => evens.push(n))
 
-		emitter
-			.when('num', (n) => n % 2 === 1)
-			.once((n) => odds.push(n))
+		emitter.when('num', (n) => n % 2 === 1).once((n) => odds.push(n))
 
 		// mixed sequence
 		;[1, 2, 3, 4, 5].forEach((n) => emitter.emit('num', n))

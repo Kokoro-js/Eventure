@@ -8,24 +8,27 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Bun.js
-        uses: oven-sh/setup-bun@v2
+      - name: Prepare package
+        uses: ./.github/actions/prepare-package
 
-      - name: Install dependencies
-        run: bun install
-
-      - name: Run Build
-        run: bun run build
-
-      - name: Run Test
-        run: bun run test
+      - name: Verify
+        run: |
+          bun run format:check
+          bun run lint
+          bun run type-check
+          bun run build
+          bun run test
 
   benchmark:
     name: Benchmark
@@ -33,30 +36,23 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
+      contents: read
+      issues: write
     steps:
       - name: Checkout PR code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Bun.js
-        uses: oven-sh/setup-bun@v2
+      - name: Prepare PR package
+        uses: ./.github/actions/prepare-package
 
-      - name: Install dependencies
-        run: bun install
-
-      - name: Build distribution
+      - name: Build PR distribution
         run: bun run build
 
-      - name: Install benchmark dependencies
-        working-directory: tinybench
-        run: bun install
-
-      - name: Run PR benchmarks
-        env:
-          BENCH_RESULTS_PATH: ${{ github.workspace }}/benchmarks/pr.json
-        run: bun ./tinybench/onlyEmit.ts
+      - name: Prepare benchmark package
+        uses: ./.github/actions/prepare-package
+        with:
+          working-directory: tinybench
+          setup-runtime: 'false'
 
       - name: Checkout baseline
         uses: actions/checkout@v4
@@ -64,34 +60,30 @@ jobs:
           repository: ${{ github.event.pull_request.base.repo.full_name }}
           ref: ${{ github.event.pull_request.base.sha }}
           path: baseline
-          fetch-depth: 0
 
-      - name: Install dependencies (baseline)
-        working-directory: baseline
-        run: bun install
+      - name: Prepare baseline package
+        uses: ./.github/actions/prepare-package
+        with:
+          working-directory: baseline
+          setup-runtime: 'false'
+          install-args: '--no-save'
 
-      - name: Build distribution (baseline)
+      - name: Build baseline distribution
         working-directory: baseline
         run: bun run build
 
-      - name: Install benchmark dependencies (baseline)
-        working-directory: baseline/tinybench
-        run: bun install
+      - name: Run API regression benchmark
+        id: api_benchmark
+        continue-on-error: true
+        run: bun ./tinybench/apiRegression.ts ./baseline/dist/index.mjs ./dist/index.mjs
 
-      - name: Run baseline benchmarks
-        working-directory: baseline
-        env:
-          BENCH_RESULTS_PATH: ${{ github.workspace }}/benchmarks/baseline.json
-        run: bun ./tinybench/onlyEmit.ts
+      - name: Run emit reference benchmark
+        id: compare_benchmark
+        run: bun ./tinybench/onlyEmit.ts ./baseline/dist/index.mjs ./dist/index.mjs
 
-      - name: Compare benchmark reports
-        run: bun scripts/compareBenchmarks.ts benchmarks/baseline.json benchmarks/pr.json benchmarks/comment.md
-
-      - name: Publish benchmark summary
-        run: cat benchmarks/comment.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Comment on PR with benchmark delta
-        if: github.event_name == 'pull_request'
+      - name: Comment on PR with benchmark results
+        if: always()
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -101,7 +93,16 @@ jobs:
               issue_number: context.issue.number,
             })
             const marker = '<!-- benchmark-report -->'
-            const body = `${marker}\n${await require('fs').promises.readFile('benchmarks/comment.md','utf8')}`
+            const apiMarkdown = ${{ toJSON(steps.api_benchmark.outputs.markdown) }}
+            const compareMarkdown = ${{ toJSON(steps.compare_benchmark.outputs.markdown) }}
+            const sections = []
+            if (apiMarkdown) sections.push(apiMarkdown)
+            else sections.push('## Eventure API Performance\n\nAPI regression benchmark did not produce markdown output.')
+            sections.push('---')
+            if (compareMarkdown) sections.push(compareMarkdown)
+            else sections.push('## Emit Reference Benchmark\n\nEmit reference benchmark did not produce markdown output.')
+            const markdown = sections.join('\n\n')
+            const body = `${marker}\n${markdown}`
             const existing = comments.find((c) => c.body?.startsWith(marker))
             if (existing) {
               await github.rest.issues.updateComment({
@@ -118,3 +119,7 @@ jobs:
                 body,
               })
             }
+
+      - name: Fail on API performance regression
+        if: steps.api_benchmark.outcome == 'failure'
+        run: exit 1

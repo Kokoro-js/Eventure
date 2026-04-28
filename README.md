@@ -1,83 +1,82 @@
 <h1 align="center">Eventure</h1>
 
-<a align="center">
-<b>Eventure</b>：一个现代的事件库，提供丰富的监听器添加方式与触发机制，优化微任务调度性能，看看 <a href="#-性能测试">性能测试</a>。你可以在 <a href="./tests/">tests</a> 中查看详细用法示例，包括不限于 <a href="./tests/waitFor.test.ts">waitFor</a> / <a href="./tests/fire.test.ts">触发端控制中断</a> / <a href="./tests/waterfall.test.ts">监听端控制中断</a> / <a href="./tests/when.test.ts">带前置条件</a>的 <a href="./tests/onceMany.test.ts">once/many</a> 移除监听器</a>。
-</a>
-
 <p align="center">
-  <a href="https://www.npmjs.com/package/eventure">
-    <img src="https://img.shields.io/npm/v/eventure?style=flat-square" alt="NPM 版本">
-  </a>
-  <a href="https://github.com/Kokoro-js/Eventure/actions/workflows/test.yml">
-    <img src="https://github.com/Kokoro-js/Eventure/actions/workflows/test.yml/badge.svg" alt="测试状态">
-  </a>
+<b>Eventure</b> 是一个类型友好的事件库。除了常规事件注册和触发，它重点支持 <a href="#功能与示例">调用方中断、监听方短路、条件监听、等待下一次事件</a> 等控制流能力，并把高频触发路径作为主要性能优化目标，见 <a href="#性能">性能</a>。
 </p>
 
-## 🚀 快速开始
+<p align="center">
+  <a href="https://www.npmjs.com/package/eventure"><img src="https://img.shields.io/npm/v/eventure?style=flat-square" alt="NPM version"></a>
+  <a href="https://github.com/Kokoro-js/Eventure/actions/workflows/test.yml"><img src="https://github.com/Kokoro-js/Eventure/actions/workflows/test.yml/badge.svg" alt="Test status"></a>
+  <a href="https://github.com/Kokoro-js/Eventure/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/eventure?style=flat-square" alt="License"></a>
+</p>
 
-### 📥 安装
+## 安装
 
 ```bash
-# 使用 bun
-bun install eventure
-
-# 或使用 npm/yarn/pnpm
-npm install eventure
-yarn add eventure
-pnpm i eventure
+npx nypm add eventure
 ```
 
-### 🚀 性能测试
-
-Eventure vs [EventEmitter3](https://github.com/primus/eventemitter3) vs [EventEmitter2](https://github.com/EventEmitter2/EventEmitter2) vs [mitt](https://github.com/developit/mitt) (每次测轮跑 ×10⁵ 次)
-<br>该测试可复现，请查看 [tinybench](./tinybench/)，考虑到小于 5% 的误差在实际应用中完全可以忽略，
-我们并不想夸大性能优势，Eventure 的目的是保证功能正确的同时保持第一梯队的性能，EE3 缺乏功能，EE2 混乱且难维护，这便是 Eventure 存在的意义。
-<br>关于性能主要来源（例如：不可变快照语义避免每次 emit 的 `slice()`、降低 GC 压力的策略等），见 [PERFORMANCE.md](./PERFORMANCE.md)。
-
-| #   | Task name                         | Throughput avg (×10⁵ ops/s) | Throughput med (×10⁵ ops/s) | Latency avg (ns)     | Latency med (ns)     | Samples |
-| --- | -------------------------         | --------------------------- | --------------------------- | -------------------  | -------------------  | ------- |
-| 0   | Eventure — pure sync              | 541 ± 2.47%                 | 564 ± 20                    | 19.14 ± 5.85%        | 17.73 ± 0.061        | 105     |
-| 1   | EventEmitter3 — pure sync         | 448 ± 2.85%                 | 466 ± 14                    | 23.12 ± 5.84%        | 21.46 ± 0.061        | 87      |
-| 2   | EventEmitter2 — pure sync         | 416 ± 4.68%                 | 447 ± 46                    | 25.74 ± 7.84%        | 22.39 ± 0.218        | 78      |
-| 3   | mitt — pure sync                  | 249 ± 3.42%                 | 244 ± 22                    | 40.83 ± 3.83%        | 40.97 ± 0.368        | 50      |
-
-| #   | Task name                         | Throughput avg (×10⁵ ops/s) | Throughput med (×10⁵ ops/s) | Latency avg (ns)     | Latency med (ns)     | Samples |
-| --- | --------------------------------- | --------------------------- | --------------------------- | -------------------- | -------------------- | ------- |
-| 0   | Eventure — async end-to-end       | 35 ± 9.43%                  | 37 ± 3                      | 292.66 ± 10.05%      | 273.38 ± 2.060       | 10      |
-| 1   | EventEmitter3 — async end-to-end  | 33 ± 9.84%                  | 35 ± 3                      | 306.00 ± 10.63%      | 282.48 ± 2.320       | 10      |
-| 2   | EventEmitter2 — async end-to-end  | 35 ± 9.77%                  | 35 ± 4                      | 294.56 ± 10.17%      | 288.25 ± 2.905       | 10      |
-| 3   | mitt — async end-to-end           | 27 ± 6.63%                  | 27 ± 2                      | 376.48 ± 7.00%       | 368.45 ± 2.496       | 10      |
-
-### 🧪 示例用法
+## 基础用法
 
 ```ts
-import { Eventure } from "eventure"
+import { Eventure } from 'eventure'
 
-interface MyEvents {
-  foo: [string];                         // 等价于 (arg1: string) => void
-  bar: [number, number];                // (arg1: number, arg2: number) => void
-  test: (a: number, b: number) => number
-  numEvent: (value: number, next: (value: number) => number) => number;
+interface Events {
+	message: [text: string]
+	sum: (a: number, b: number) => number
 }
 
-const emitter = new Eventure<MyEvents>()
+const events = new Eventure<Events>()
 
-emitter.on("foo", (message) => {
-  console.log(message)
+const unsubscribe = events.on('message', (text) => {
+	console.log(text)
 })
 
-emitter.emit("foo", "你好，世界")
+events.emit('message', 'hello')
+unsubscribe()
+
+events.on('sum', (a, b) => a + b)
+const results = await events.emitAll('sum', 1, 2)
 ```
 
-更多用法请查看： [tests/](./tests/)
+无返回值事件用 tuple 写；关心 listener 返回值时，用函数签名写。完整方法说明见 [API.md](./API.md)。
 
-### 🔧 进阶
+## 功能与示例
 
-- `onAt(event, { at, signal? }, listener)`：按指定位置插入监听器（`at` 可为 number 或 `(ctx) => number`）
-- `emitAll(event, ...args)`：并发执行所有监听器，任一抛错/拒绝/返回 `Error` 会 reject（行为类似 `Promise.all`）
-- `emitSettled(event, ...args)`：返回 `{ fn, status, value|reason }[]`，永不 throw（行为类似 `Promise.allSettled`）
-- `listenersUnsafe(event)`：返回内部监听器数组引用（零拷贝，**不要 mutate**；仅用于高级/性能场景）
+测试文件同时作为可运行示例：
 
-## 🤝 贡献指南
+- 调用方控制中断：[fire / fireAsync](https://github.com/Kokoro-js/Eventure/blob/main/tests/fire.test.ts) 逐个产出 listener 的 `success` / `error` / `async` 结果；调用方可以 `break` / `return`，后续 listener 不会继续执行。
+- 监听方控制短路：[waterfall](https://github.com/Kokoro-js/Eventure/blob/main/tests/waterfall.test.ts) 让 listener 通过 `next` 串联；某个 listener 不调用 `next` 时流水线停止，并返回 `{ ok: false, value }`。
+- 单事件通道：[EvtChannel](https://github.com/Kokoro-js/Eventure/blob/main/tests/channel.test.ts) 适合只管理一个事件的场景，方法与 `Eventure` 基本一致但不需要事件名。
+- 条件、限次与位置监听：[once / many](https://github.com/Kokoro-js/Eventure/blob/main/tests/onceMany.test.ts)、[when](https://github.com/Kokoro-js/Eventure/blob/main/tests/when.test.ts) 和 [at scope](https://github.com/Kokoro-js/Eventure/blob/main/tests/scope.test.ts) 支持一次性、限次、带 predicate 和指定插入位置的监听。
+- 等待下一次事件：[waitFor](https://github.com/Kokoro-js/Eventure/blob/main/tests/waitFor.test.ts) 支持过滤、超时、取消和 `AbortSignal`。
+- 批量收集结果：[emitAll / emitSettled](https://github.com/Kokoro-js/Eventure/blob/main/tests/emitAllSettled.test.ts) 分别对应快速失败和 settled 结果收集。
+- 基础行为：[Eventure 基础测试](https://github.com/Kokoro-js/Eventure/blob/main/tests/index.test.ts) 覆盖注册、触发、退订和异步错误处理。
 
-欢迎任何形式的贡献！如果你有改进建议或发现了问题，请提交 Pull Request 🙌。
+## 性能
+
+Benchmark 源码见 [tinybench/onlyEmit.ts](https://github.com/Kokoro-js/Eventure/blob/main/tinybench/onlyEmit.ts)，设计说明见 [PERFORMANCE.md](./PERFORMANCE.md)。
+
+每个 sample 内部执行 `100_000` 次 emit，尽量摊薄 benchmark 自身的调度开销。主要性能收益来自 Copy-On-Write 的监听器数组设计，具体见设计说明。
+
+`bench:compare` 用于和 EventEmitter3、EventEmitter2、mitt 做 emit 参考线对比；`bench:api` 用于 Eventure 自身 API 的 base/PR 性能回归检测。
+
+本地记录：Bun 1.3.4，Linux x64，11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz，`hrtimeNow`。参考库：EventEmitter3 ^5.0.4，EventEmitter2 ^6.4.9，mitt ^3.0.1。
+
+Sync emit loop：
+
+| Rank | Task          | ×10^5 emits/s | RME   | Samples | ns/emit |
+| ---: | ------------- | ------------: | ----- | ------: | ------: |
+|    1 | Eventure      |        884.70 | 0.37% |     881 |   11.30 |
+|    2 | EventEmitter2 |        526.94 | 0.70% |     523 |   18.98 |
+|    3 | EventEmitter3 |        485.29 | 0.67% |     480 |   20.61 |
+|    4 | mitt          |        267.76 | 0.70% |     267 |   37.35 |
+
+Async end-to-end：
+
+| Rank | Task          | ×10^5 emits/s | RME   | Samples | ns/emit |
+| ---: | ------------- | ------------: | ----- | ------: | ------: |
+|    1 | Eventure      |         44.79 | 3.17% |      88 |  223.27 |
+|    2 | EventEmitter3 |         42.53 | 2.91% |      84 |  235.13 |
+|    3 | EventEmitter2 |         40.03 | 3.20% |      79 |  249.83 |
+|    4 | mitt          |         31.53 | 3.16% |      63 |  317.15 |

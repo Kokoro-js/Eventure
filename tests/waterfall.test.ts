@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
+
 import { Eventure } from 'eventure'
+
 import { silentLogger } from './testUtils'
 
 interface NumberPipelineEvents {
@@ -56,6 +58,14 @@ describe('Eventure.waterfall (number pipeline)', () => {
 		const res = emitter.waterfall('numEvent', 2, (v: number) => v - 1)
 		expect(calls).toEqual(['interrupt'])
 		expect(res).toEqual({ ok: false, value: 6 }) // 2*3 = 6
+	})
+
+	it('preserves return values through once listeners', () => {
+		emitter.once('numEvent', (value, next) => next(value + 2))
+
+		const res = emitter.waterfall('numEvent', 4, (value: number) => value * 3)
+		expect(res).toEqual({ ok: true, value: 18 })
+		expect(emitter.count('numEvent')).toBe(0)
 	})
 })
 
